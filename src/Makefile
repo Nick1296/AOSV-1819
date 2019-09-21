@@ -1,7 +1,7 @@
 # Module name
 obj-m += SessionFS.o
 # objects that from the module
-SessionFS-objs+=module.o 
+SessionFS-objs+=module.o hooks.o
 
 all:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules

@@ -53,21 +53,45 @@ MODULE_VERSION("0.01");
  * themselves.
  * \returns 0 on successful initialization or a code in `uapi/asm-generic/errno-base.h` that specifies the error.
  *
- * \todo insert krprobes in all the interested syscalls.
+ * \todo insert krprobes in all the interested syscalls (now only open has a kprobe).
  */
 static int __init sessionFS_load(void){
-	printk(KERN_INFO "loaded module\n");
+	int ret=0;							// return value
+	struct kprobe* kp;			//used to move into the kps array
+	//struct kretprobe* krp; 	//used to move into the krps array
+
+	printk(KERN_INFO "initializing kprobes\n");
+	//allocating the kprobe structures
+	kps=(struct kprobe*) kzalloc(sizeof(struct kprobe)*NKP, GFP_KERNEL);
+
+	//initializing open kprobe
+	kp=kps;
+	kp->pre_handler=test;
+	kp->symbol_name="do_sys_open";
+	ret=register_kprobe(kp);
+	if(ret==0){
+		printk(KERN_DEBUG "succesfully registered kprobe on do_sys_open\n");
+	}else{
+		printk(KERN_ERR "registration of kprobe in do_sys_open failed\n");
+		return -EPERM;
+	}
+
+
+	printk(KERN_INFO "loaded kprobes\n");
 	return 0;
 }
 
 /**
  * Before unloading the module we need to close every opened session and remove the kprobes that we inserted during the
  * initialization.
- * \todo free and uregister all used krpobes 
+ * \todo free and unregister all used kprobes 
  * \todo force close every opened session
  */
 static void __exit sessionFS_unload(void){
-	printk(KERN_INFO "module unloaded\n");
+	//unregistering kprobes
+	unregister_kprobe(kps);
+	kfree(kps);
+	printk(KERN_INFO "kprobes released\n");
 }
 /// Specification of the module init function
 module_init(sessionFS_load);
