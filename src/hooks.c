@@ -1,7 +1,7 @@
 #include <linux/kernel.h>
 #include <linux/kprobes.h>
 
-/**
+/*
  * Simple test which outputs a message
  * every time the handler is fired.
  */

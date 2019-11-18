@@ -26,7 +26,12 @@
 #include<linux/kprobes.h>
 //kmalloc etc..
 #include<linux/slab.h>
-
+// dentry management
+#include<linux/namei.h>
+#include<linux/path.h>
+#include<linux/dcache.h>
+//error management
+#include<linux/err.h>
 #include "hooks.h"
 /**
  * \brief Specification of the license used by the module.
@@ -40,6 +45,47 @@ MODULE_AUTHOR("Mattia Nicolella <mattianicolella@gmail.com>");
 MODULE_DESCRIPTION("A session based virtual filesystem wrapper");
 /// Module version specification
 MODULE_VERSION("0.01");
+
+/// \brief parameter that keeps the path to the directory in which session sematic is enabled
+static char* sess_path = "/mnt/";
+module_param(sess_path,charp,0770);
+MODULE_PARM_DESC(sess_path,"path in which session sematic is enabled");
+
+/** \brief Check if the given path is a subpath of \ref sess_path
+ *
+ * Gets the dentry from the given path and from  \ref sess_path and check is the second dentry is an ancestor of the first dentry.
+ * \todo implement!
+ * \param[in] path Path to be checked
+ * \returns 1 if the given path is a subpath of \ref sess_path and 0 otherwise; -1 is returned on error.
+ */
+int path_check(char* path){
+	struct path psess,pgiven;
+	struct dentry *dsess,*dgiven, *dentry;
+	int retval;
+	//get dentry from the sess_path
+	retval=kern_path(sess_path,LOOKUP_FOLLOW,&psess);
+	if(retval!=0){
+		return retval;
+	}
+	dsess=psess.dentry;
+	//get dentry from given path
+	retval=kern_path(path,LOOKUP_FOLLOW,&pgiven);
+	if(retval!=0){
+		return retval;
+	}
+	dgiven=pgiven.dentry;
+	
+	dentry=dgiven;
+	//check if dsess is an ancestor of dgiven
+	while(!IS_ROOT(dentry)){
+		if(dentry == dsess){
+			return 1;
+		} else{
+			dentry=dentry->d_parent;
+		}
+	}
+	return 0;
+}
 
 /**
  * The module initialization is done by inserting a kprobe in each of the following functions:
