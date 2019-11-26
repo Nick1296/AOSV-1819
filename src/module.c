@@ -32,7 +32,9 @@
 #include<linux/dcache.h>
 //error management
 #include<linux/err.h>
-#include "hooks.h"
+#include <uapi/linux/limits.h>
+#include <linux/uaccess.h>
+
 /**
  * \brief Specification of the license used by the module.
  * Close sourced module cannot access to all the kernel facilities.
@@ -47,8 +49,8 @@ MODULE_DESCRIPTION("A session based virtual filesystem wrapper");
 MODULE_VERSION("0.01");
 
 /// \brief parameter that keeps the path to the directory in which session sematic is enabled
-static char* sess_path = "/mnt/";
-module_param(sess_path,charp,0770);
+static char* sess_path;
+module_param(sess_path,charp,0664);
 MODULE_PARM_DESC(sess_path,"path in which session sematic is enabled");
 
 /** \brief Check if the given path is a subpath of \ref sess_path
@@ -88,6 +90,53 @@ int path_check(char* path){
 }
 
 /**
+ * \brief Used kprobes.
+ *
+ * Kprobes used to hook into the syscalls, they
+ * allocated as an array.
+ */
+static struct kprobe* kps;
+
+/**
+ * \brief Used kretprobes.
+ *
+ * Kretprobes used to hook at the end of the VFS syscalls,
+ * they are allocated as an array.
+ */
+//static struct kretprobe* krps;
+
+///Number of used kprobes.
+#define NKP 5
+///Number of used kretprobes.
+//#define NKRP 0
+
+
+/** \brief Flag that enables the session semantic.
+ *  Unused flag in `include/uapi/asm-generic/fcntl.h` that is repurposed to be used to enable the session semantic.
+ */
+#define SESSION_OPEN 00000004
+
+/**
+ * Simple test which outputs a message
+ * every time the handler is fired.
+ */
+int test(struct kprobe *p, struct pt_regs *regs){
+	int flag=0,path=0;
+	char* path_str=kmalloc(PATH_MAX*sizeof(char),GFP_KERNEL);
+	int ret=copy_from_user(path_str,(const void __user *)regs->cx,PATH_MAX*sizeof(char));
+	flag=regs->dx & SESSION_OPEN;
+	path=path_check(path_str);
+	if(flag==4 && path==1){
+		printk(KERN_INFO "session folder: %s\n",sess_path);
+		printk(KERN_INFO "correctly hooked on a session open call\n");
+		printk(KERN_INFO "given path: %s\n",path_str);
+		printk(KERN_INFO "copy_from_user result: %d\n",PATH_MAX-ret);
+		printk(KERN_INFO "check results: path=%d flag=%d\n",path,flag);
+	}
+	return 0;
+}
+
+/**
  * The module initialization is done by inserting a kprobe in each of the following functions:
  * - open
  * - release
@@ -103,9 +152,14 @@ int path_check(char* path){
  */
 static int __init sessionFS_load(void){
 	int ret=0;							// return value
+	
 	struct kprobe* kp;			//used to move into the kps array
 	//struct kretprobe* krp; 	//used to move into the krps array
 
+	//session path initialization
+	sess_path = kmalloc(PATH_MAX,GFP_KERNEL);
+	strcpy(sess_path,"/home/nick1296/Workspace");
+	
 	printk(KERN_INFO "initializing kprobes\n");
 	//allocating the kprobe structures
 	kps=(struct kprobe*) kzalloc(sizeof(struct kprobe)*NKP, GFP_KERNEL);
