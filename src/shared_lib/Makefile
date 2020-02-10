@@ -1,4 +1,3 @@
-CCDBGOPTS=-shared -fPIC -Wall -ggdb -Wstrict-prototypes -fsanitize=address
 CCOPTS=-shared -fPIC -Wall -Wstrict-prototypes
 LIBS=-ldl
 CC=gcc
@@ -15,9 +14,6 @@ HEADERS=libsessionfs.h
 
 
 all:	$(BINS)
-
-libsessionfs-test: $(OBJS)
-		$(CC) $(CCDBGOPTS)  -o libsessionfs.so $(OBJS) $(LIBS)
 
 libsessionfs: $(OBJS)
 		$(CC) $(CCOPTS)  -o libsessionfs.so $(OBJS) $(LIBS)

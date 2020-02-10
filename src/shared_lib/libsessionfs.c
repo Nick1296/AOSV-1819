@@ -1,8 +1,6 @@
 #include "libsessionfs.h"
-
 #define DEBUG
 
-///we use printf to debug the wrapping
 #ifdef DEBUG
 #include <stdio.h>
 #endif
@@ -36,13 +34,15 @@ int open(const char* pathname, int flags){
 #endif
 		return 0; /// \todo replace with an actual ioctl call
 	} else {
+#ifdef DEBUG
 		printf("calling libc open\n");
+#endif
 		return orig_open(pathname, flags);
 	}
 }
 
 /**
- *
+ * \todo document and wrap close
  */
 int close(int filedes){
 #ifdef DEBUG

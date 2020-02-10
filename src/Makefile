@@ -1,21 +1,24 @@
 .phony: shared_lib shared_lib-test demo-prog demo-prog-test all all-test
 
-all: shared-lib demo-prog
+all: shared-lib demo-lib
 
-all-test: shared_lib-test demo-prog-test
+wrap: demo-wrap
 
 shared-lib:
 		$(MAKE) -C shared_lib
 
-demo-prog:
+demo-lib: shared-lib
 		$(MAKE) -C demo
 
-shared_lib-test:
-		$(MAKE) -C shared_lib libsessionfs-test
-
-demo-prog-test:
-		$(MAKE) -C demo demo-test
+demo-wrap:
+		$(MAKE) -C demo demo-wrap
 
 clean:
 		$(MAKE) -C shared_lib clean
 		$(MAKE) -C demo clean
+
+wrap-test:
+		demo/demo
+
+lib-test:
+		LD_PRELOAD=$(PWD)/shared_lib/libsessionfs.so demo/demo

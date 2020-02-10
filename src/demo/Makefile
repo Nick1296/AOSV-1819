@@ -1,4 +1,3 @@
-CCDBGOPTS= -Wall -ggdb -Wstrict-prototypes -fsanitize=address
 CCOPTS= -Wall -Wstrict-prototypes
 LIBS= -L $(PWD)/shared_lib/libsessionfs.so
 CC= gcc
@@ -14,13 +13,19 @@ HEADERS=
 .phony: clean all demo demo-test
 
 
-all: demo-prog
+all: demo-lib
 
-demo-test: $(OBJS)
-		$(CC) $(CCDBGOPTS)  -o demo $(OBJS) $(LIBS)
+demo.o: $(OBJS)
+		$(CC) -c -o demo.o $(OBJS)
 
-demo-prog: $(OBJS)
-		$(CC) $(CCOPTS)  -o demo $(OBJS) $(LIBS)
+wrap.o: wrap.c
+		$(CC) -c -o wrap.o wrap.c
+
+demo-wrap: wrap.o demo.o
+		$(CC) -Wl,-wrap=open -Wl,-wrap=close demo.o wrap.o -o demo
+
+demo-lib: $(OBJS)
+		$(CC) $(CCOPTS) -o demo $(OBJS) $(LIBS)
 
 clean:
 	rm -rf *.o *~  $(BINS)
