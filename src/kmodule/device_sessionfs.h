@@ -8,6 +8,7 @@
 #define DEV_H
 
 #include <uapi/asm-generic/ioctl.h>
+#include <linux/types.h>
 
 /** A major device number is necessary to identify our virtual device, since it doensn't have an assigned letter.
  * We use 120 as major number since it reserved for local and experimental use. <a href="Documentation/admin-guide/devices.txt">Source</a>
@@ -26,10 +27,17 @@
 /// The ioctl sequence number that idenfies the closing of a session.
 #define IOCTL_SEQ_CLOSE 1
 
-///We define a struct that will hold the pathanme and flags that determine the behaviour of the session opening
-struct open_params{
-	const char* pathanme;
+/**
+ * \struct sess_params
+ * \param orig_path The pathname of the original file to be opened in a session
+ * We define a struct that will hold the pathanme and flags that determine the behaviour of the session opening
+*/
+struct sess_params{
+	const char* orig_path;
 	int flags;
+	pid_t pid;
+	const char* inc_path;
+	int filedes;
 };
 
 /** We define the ioctl command for opening a session.

@@ -8,6 +8,21 @@
 
 #include <linux/types.h>
 
+/// Used to toggle the necessity of a file descriptor in ::open_file.
+#define NO_FD 0
+
+///Permissions to be given to the newly created files.
+#define DEFAULT_PERM
+
+///Used to determine if a session node is valid.
+#define INVALID_SESSION 0
+
+///The portion of the file which is copied at each read/write iteration
+#define DATA_DIM 512
+
+///Used to determine if the content of the incarnation must overwrite the original file on close
+#define OVERWRITE_ORIG 0
+
 /** \struct incarnation
  * \brief Informations on an incarnation of a file.
  * \param next Next incarnation on the list.
@@ -15,6 +30,7 @@
  * \param pathname The pathanme of the incarnation file.
  * \param filedes File descriptor of the incarnation.
  * \param owner_pid Pid of the process that has requested the incarnation.
+ * \param status Contains the error code that could have invalidated the session. If its value is less than 0 then the incarnation is invalid and must be closed as soon as possible.
  */
 struct incarnation{
 	struct llist_node* next;
@@ -22,6 +38,7 @@ struct incarnation{
 	const char* pathname;
 	int filedes;
 	pid_t owner_pid;
+	int status;
 };
 
 

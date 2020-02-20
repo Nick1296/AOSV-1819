@@ -9,11 +9,14 @@
 #include "device_sessionfs.h"
 ///Device properties for the kernel module.
 #include "device_sessionfs_mod.h"
+///Our session manager module
+#include "session_manager.h"
+
 // for file_operations struct, register_chrdev unregister_chrdev
 #include <linux/fs.h>
 //for kmalloc
 #include<linux/slab.h>
-// for copy_to_user
+// for copy_to_user and copy_from_user
 #include<linux/uaccess.h>
 // for PATH_MAX
 #include<uapi/linux/limits.h>
@@ -21,9 +24,11 @@
 #include<linux/device.h>
 //for THIS_MODULE
 #include<linux/module.h>
+//for error numbers
+#include <uapi/asm-generic/errno.h>
 
 ///The default session path when the device is initialized
-#define DEFAULT_SESS_PATH "/mnt\0"
+#define DEFAULT_SESS_PATH "/mnt"
 
 /// \brief parameter that keeps the path to the directory in which session sematic is enabled
 ///\todo check if this varaible must be protected from concurrent access
@@ -106,8 +111,82 @@ static char *sessionfs_devnode(struct device *dev, umode_t *mode)
 	return NULL;
 }
 
+/** \brief Handles the ioctls calls from the shared library.
+ * \param[in] file
+ * \param[in] num The ioctl sequence number, used to identify the operation to be
+ * executed, its possible values are ::IOCTL_SEQ_OPEN and ::IOCTL_SEQ_CLOSE.
+ *\param[in] param The ioctl param, which is a ::struct 
+ */
+int device_ioctl(struct file * file, unsigned int num, unsigned long param){
+	const char* orig_pathname=NULL;
+	int res;
+	struct sess_params* p;
+	p=kzalloc(sizeof(struct sess_params), GFP_KERNEL);
+	if(!p){
+		return -ENOMEM;
+	}
+	//get the parameters struct from userspace
+	res=copy_from_user(p,param,sizeof(struct sess_params));
+	if(res>0){
+		kfree(p);
+		return -EINVAL
+	}
+	pathname=kzalloc(sizeof(char)*PATH_MAX, GFP_KERNEL);
+	if(!pathname){
+		kfree(p);
+		return -ENOMEM;
+	}
+	//we try to initialize the sess_params::inc_pathname with the content a sequence of 0, to see if if a valid userspace memory address
+	res=copy_to_user(p->inc_pathname,pathname,sizeof(char)*PATH_MAX);
+	if(res>0){
+		kfree(pathname);
+		kfree(p);
+		return -EINVAL
+	}
+	switch(num){
+		case IOCTL_SEQ_OPEN:
+			//copy the pathname string to kernel space
+			res=copy_from_user(pathname,p->orig_path,sizeof(char)*PATH_MAX);
+			if(res>0){
+				kfree(p);
+				kfree(pathname);
+				return -EINVAL;
+			}
+			//we create a new session incarnation
+			struct incarnation* inc=NULL;
+			inc=create_session(pathname,p->flags,p->pid);
+			//return the erro if we have failed in creatig the session
+			if(IS_ERR(inc)){
+				kfree(p);
+				kfree(pathname);
+				return PTR_ERR(inc);
+			}
+			//now we must check that the created session is valid
+			if(inc->status<0){
+				//we copy the incarnation pathname into the corresponding parameter in the sess_struct.
+				res=copy_to_user(p->inc_pathname,inc->pathname,sizeof(char)*PATH_MAX);
+				if(res>0){
+					//this should not happen since we have alredy tried to copy into this struct at the beginning.
+					kfree(pathname);
+					kfree(p);
+					return -EINVAL
+				}
+			}
+			//we set the file descriptor into the sess_struct.
+			p->filedes=inc->filedes;
+			//we overwrite the existing sess_struct in userspace
+			res=copy_to_user(param,p,sizeof(struct sess_params));
+			kfree(pathname);
+			kfree(p);
+			if(res>0){
+				return -EAGAIN;
+			}
+			return inc->status;
+			break;
+	}
+}
+
 /** Initializes the devices by setting sess_path, path_len and dev_ops variables, then registers the devices.
- * \todo allocate memory for the structures that are needed to hold session information.
  */
 int init_device(void){
 	int res;
@@ -122,9 +201,12 @@ int init_device(void){
 	/// \todo implement ioctls
 	//dev_ops->unlocked_ioctl=ioctl;
 	/// \todo allocate session info structures
+	//init the session manager
+	init_manager();
 	//register the device
 	res=register_chrdev(MAJOR_NUM,DEVICE_NAME,dev_ops);
 	if(res<0){
+		release_manager();
 		printk(KERN_ALERT "failed to register the sessionfs virtual device\n");
 		return res;
 	}
@@ -132,6 +214,7 @@ int init_device(void){
 	//register the device class
 	dev_class=class_create(THIS_MODULE,CLASS_NAME);
 	if (IS_ERR(dev_class)){
+		release_manager();
 		unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
 		printk(KERN_ALERT "Failed to register device class\n");
 		return PTR_ERR(dev_class);
@@ -141,18 +224,18 @@ int init_device(void){
 	printk("SessionFS device class registered successfully\n");
 	//register the device driver
 	dev = device_create(dev_class, NULL, MKDEV(MAJOR_NUM, 0), NULL, DEVICE_NAME);
-   if (IS_ERR(dev)){
-      class_destroy(dev_class);
-      unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
-      printk(KERN_ALERT "Failed to create the device\n");
-      return PTR_ERR(dev);
+		if(IS_ERR(dev)){
+			release_manager();
+			class_destroy(dev_class);
+			unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
+			printk(KERN_ALERT "Failed to create the device\n");
+			return PTR_ERR(dev);
    }
 	printk("SessionFS driver registered successfully\n");
 	return 0;
 }
 
-/** Unregister the device and frees the used memory ( ::dev_ops and ::sess_path)
- * \todo force close/discard open sessions and free the memory associated to each session.
+/** Unregister the device, releases the session manager and frees the used memory ( ::dev_ops and ::sess_path)
  */
 void release_device(void){
 	//unregister the device
@@ -160,10 +243,8 @@ void release_device(void){
 	class_unregister(dev_class);
 	class_destroy(dev_class);
 	unregister_chrdev(MAJOR_NUM,DEVICE_NAME);
-	/// \todo force close sessions
 	//free used memory
+	release_manager();
 	kfree(sess_path);
 	kfree(dev_ops);
-	/// \todo free memory used for sessions structures
 }
-///\todo check if we can interact with the device without superuser uid
