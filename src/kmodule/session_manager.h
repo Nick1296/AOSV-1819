@@ -12,10 +12,10 @@
 #define NO_FD 0
 
 ///Permissions to be given to the newly created files.
-#define DEFAULT_PERM
+#define DEFAULT_PERM 0644
 
 ///Used to determine if a session node is valid.
-#define INVALID_SESSION 0
+#define VALID_NODE 0
 
 ///The portion of the file which is copied at each read/write iteration
 #define DATA_DIM 512
@@ -51,8 +51,8 @@ struct incarnation{
  * \param pathame Pathname of the file that is opened with session semantic.
  * \param sess_lock read-write lock used to access ensure serialization in the session closures.
  * \param filedes Descriptor of the file opened with session semantic.
- * \param valid This parameter is used (after having gained the rwlock) to check if the session object is still attached to the rculist. 
- * If the session object has been removed from the rculist the value of this parameter will be ::INVALID_SESSION.  
+ * \param valid This parameter is used (after having gained the rwlock) to check if the session object is still attached to the rculist.
+ * If the session object has been removed from the rculist the value of this parameter will be different from ::VALID_NODE.
  */
 struct session{
 	struct list_head list_node;

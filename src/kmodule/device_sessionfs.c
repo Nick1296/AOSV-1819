@@ -26,16 +26,22 @@
 #include<linux/module.h>
 //for error numbers
 #include <uapi/asm-generic/errno.h>
+//for signal codes
+#include <uapi/asm-generic/signal.h>
+//for send_sig
+#include <linux/sched/signal.h>
+//for get_pid_task
+#include <linux/pid.h>
 
 ///The default session path when the device is initialized
 #define DEFAULT_SESS_PATH "/mnt"
 
 /// \brief parameter that keeps the path to the directory in which session sematic is enabled
-///\todo check if this varaible must be protected from concurrent access
+///\todo TODO check if this varaible must be protected from concurrent access
 char* sess_path=NULL;
 
 /// length of the of the path string
-///\todo check if this variable must be protected from concurrent access
+///\todo TODO check if this variable must be protected from concurrent access
 int path_len=0;
 
 ///File operations allowed on our device
@@ -112,10 +118,18 @@ static char *sessionfs_devnode(struct device *dev, umode_t *mode)
 }
 
 /** \brief Handles the ioctls calls from the shared library.
- * \param[in] file
+ * \param[in] file The special file that represents our char device.
  * \param[in] num The ioctl sequence number, used to identify the operation to be
  * executed, its possible values are ::IOCTL_SEQ_OPEN and ::IOCTL_SEQ_CLOSE.
- *\param[in] param The ioctl param, which is a ::struct 
+ *\param[in,out] param The ioctl param, which is a ::sess_params struct, that contains the information on the session that must be opened/closed and will be update with the information on the result of the operation.
+ * \returns 0 on success or an error code.
+ *
+ * This function copies the ::sess_params struct in kernel space and cleans the userspace string in sees_params::inc_pathname.
+ * Its behaviour differs in base of the ioctl sequence number specified:
+ * * ::IOCTL_SEQ_OPEN: copies the pathname of the original file in kernel space and tries to create a session, by invoking ::create_session.
+ * If the session and the incarnation are created succesfully the file descriptor of the incarnation is copied into sess_params::pid.
+ * If the incarnation gets corrupted during creation, the pid is updated as in the successful case, but the incarnation pathname is copied into sess_params::inc_path and the corresponding error code is returned, so that the library can close and remove the corrupted incarnation file.
+ * * ::IOCTL_SEQ_CLOSE: closes an open session using ::close_session and updates the ::sess_params struct with the path of the incarnation file which must be closed and removed by the library. If the original file does not exist anymore it sends `SIGPIPE` to the user process.
  */
 int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 	const char* orig_pathname=NULL;
@@ -131,12 +145,13 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 		kfree(p);
 		return -EINVAL
 	}
+	// allocating space for the original file pathname
 	pathname=kzalloc(sizeof(char)*PATH_MAX, GFP_KERNEL);
 	if(!pathname){
 		kfree(p);
 		return -ENOMEM;
 	}
-	//we try to initialize the sess_params::inc_pathname with the content a sequence of 0, to see if if a valid userspace memory address
+	//we try to initialize the sess_params::inc_pathname with a sequence of 0, to see if it is a valid userspace memory address
 	res=copy_to_user(p->inc_pathname,pathname,sizeof(char)*PATH_MAX);
 	if(res>0){
 		kfree(pathname);
@@ -155,7 +170,7 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 			//we create a new session incarnation
 			struct incarnation* inc=NULL;
 			inc=create_session(pathname,p->flags,p->pid);
-			//return the erro if we have failed in creatig the session
+			//return the error if we have failed in creating the session
 			if(IS_ERR(inc)){
 				kfree(p);
 				kfree(pathname);
@@ -183,6 +198,38 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 			}
 			return inc->status;
 			break;
+		case IOCTL_SEQ_CLOSE:
+			int res=0;
+			char* inc_pathname=NULL;
+			res=close_session(pathname,p->filedes,p->pid,&inc_pathname);
+			kfree(pathname);
+			if(res<0){
+				//we get the task struct of the user process
+				struct task_struct* task;
+				task=get_pid_task(p->pid,PIDTYPE_PID);
+				if(task == NULL){
+					res= -ESRCH;
+				} else {
+					//we send the SIGPIPE
+					res=send_sig(SIGPIPE,task,0);
+					/// \todo TODO check how send_sig works and what it returns
+				}
+			}
+			//we give the incarnation pathname to the usersoace so the library can remove it
+			res=copy_to_user(p->inc_pathname,inc_pathname,sizeof(char)*PATH_MAX);
+			kfree(inc_pathname);
+			if(res>0){
+				//this should not happen since we have alredy tried to copy into this struct at the beginning.
+				kfree(p);
+				return -EAGAIN
+			}
+			res=copy_to_user(param,p,sizeof(struct sess_params));
+			kfree(p);
+			if(res>0){
+				return -EAGAIN;
+			}
+			return res;
+			break;
 	}
 }
 
@@ -198,9 +245,7 @@ int init_device(void){
 	dev_ops= kzalloc(sizeof(struct file_operations),GFP_KERNEL);
 	dev_ops->read=device_read;
 	dev_ops->write=device_write;
-	/// \todo implement ioctls
-	//dev_ops->unlocked_ioctl=ioctl;
-	/// \todo allocate session info structures
+	dev_ops->unlocked_ioctl=device_ioctl;
 	//init the session manager
 	init_manager();
 	//register the device

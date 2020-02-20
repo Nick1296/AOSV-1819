@@ -52,3 +52,14 @@ arch/*/include/generated
 *.orig
 *~
 \#*#
+
+#
+#ignore doxygen documentation
+#
+docs/doxygen
+
+#
+#doxygen documentation we don't want to ignore
+#
+!docs/doxygen/Doxyfile
+!docs/doxygen/data-storage.*

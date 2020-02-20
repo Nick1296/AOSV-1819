@@ -6,7 +6,7 @@
 
 // for the list_head struct and rcu_head
 #include <linux/types.h>
-// for PATH_MAX 
+// for PATH_MAX
 #include<uapi/linux/limits.h>
 //for read-write locks and spinlocks APIs
 #include <linux/spinlock.h>
@@ -54,7 +54,7 @@ int open_file(const char* pathname, int flags,int fd_needed, struct file** file)
 	struct file* f=NULL;
 	int fd=-ENOENT;
 	//we try to open the file
-	file=filp_open(pathname,flags,0644);
+	file=filp_open(pathname,flags,DEFAULT_PERM);
 	if (IS_ERR(filp)) {
 		fd = PTR_ERR(filp);
 	} else {
@@ -104,6 +104,7 @@ struct session* search_session(const char* pathname){
  * and adding the object to the session list.
  * The original flags will be modified by removing the `O_RDONLY` and `O_WRONLY` in favor of `O_RDWR`, since we will always
  * read and write on this file.
+ * With the specified flags if we preserve the semantic of the `O_EXCL` flag.
  */
 struct session* init_session(const char* pathname,int flags){
 	//we try to open the original file with the given flags
@@ -136,7 +137,7 @@ struct session* init_session(const char* pathname,int flags){
 	//we copy the pathname into the session object
 	strncpy(node->pathname,pathname,sizeof(char)*PATH_MAX);
 	//we need to open the original file always with both read and write permissions.
-	flag=flags & !O_RDONLY & !O_WRONLY | O_RDWR;
+	flag=flags & ~O_RDONLY & ~O_WRONLY | O_RDWR;
 	struct file** file;
 	fd=open_file(pathname,flag,NO_FD,file);
 	if(fd < 0){
@@ -152,7 +153,7 @@ struct session* init_session(const char* pathname,int flags){
 	rwlock_init(node->sess_lock);
 	node->incarnations=LLIST_HEAD_INIT(incarnations);
 	//we flag the session as valid
-	node->valid=!INVALID_SESSION;
+	node->valid=VALID_NODE;
 	// we insert the new session in the rcu list
 	rcu_list_add(node,sessions);
 	//we release the spinlock
@@ -163,12 +164,12 @@ struct session* init_session(const char* pathname,int flags){
  * \param[in] session The session object to deallocate.
  * This function is registered as a callback after `list_del_rcu`, to free the memory used by teh session when nobody is accessing it.
  * **DO NOT** call this function directly, unless you are shure that you won't have race condition on the rculist.
- */ 
+ */
 void delete_session(struct session* session){
 	//before deleting the session we grab the write lock to make sure that we don't deallocate the session while someone is reading it
 	write_lock(session->sess_lock);
 	filp_close(session->file,NULL);
-	/// \todo check if we need to deallocate the struct file for the original file.
+	/// \todo TODO check if we need to deallocate the struct file for the original file.
 	kfree(session->pathname);
 	session->file=NULL;
 	session->pathname=NULL;
@@ -211,23 +212,23 @@ int copy_file(struct file* src,struct file* dst){
  * \param[in] flags The flags the regulates how the file must be opened.
  * \param[in] pid The pid of the process that wants the create a new incarnation.
  * \returns The file descriptor of the new incarnation or an error code.
- * 
+ *
  * Creates an incarnation by opening a new file, copying the contents of the original file in the new file, then
  * creating an incarnation object, filling it with info and adding it to the list of incarnations.
  * The original flags will be modified by adding the `O_CREAT` flag, since the incarnation file must always be created.
  * If the created incarnation is invalid the error code that has invalidated the session can be found in the incarnation::status parameter.
  */
 struct incarnation* create_incarnation(struct session* session, int flags, pid_t pid){
-	/*we get the read lock since we do not need to protect the lockless list when adding elements, but the session
+	/* we get the read lock since we do not need to protect the lockless list when adding elements, but the session
 	* incarnations must be created atomically in respect to close operations on the same original file
 	*/
 	read_lock(session->sess_lock);
-	//we check if the current session is in the rculist, or it has been detached and it will be freed shortly
-	if(session->valid==INVALID_SESSION){
+	//if the current session has been detached and it will be freed shortly we abort the incarnation creation
+	if(session->valid!=VALID_NODE){
 		read_unlock(session->sess_lock);
 		return NULL;
 	}
-	//we create the pathname for the incaration
+	//we create the pathname for the incarnation
 	int res=0;
 	char *pathname=kzalloc(PATH_MAX*sizeof(char),GPF_KERNEL);
 	if(!pathname){
@@ -243,7 +244,7 @@ struct incarnation* create_incarnation(struct session* session, int flags, pid_t
 	//we create the incarnation object
 	struct incarnation* incarnation;
 	incarnation=kmalloc(sizeof(struct incarnation), GFP_KERNEL);
-	if(!incarantion){
+	if(!incarnation){
 		read_unlock(session->sess_lock);
 		kfree(pathname);
 		return -ENOMEM;
@@ -268,20 +269,20 @@ struct incarnation* create_incarnation(struct session* session, int flags, pid_t
 	incarnation->flags=flags;
 	incarnation->owner_pid=pid;
 	//we add it to the list
-	//we add the incarnation to the list of active incarations
+	//we add the incarnation to the list of active incarnations
 	llist_add(incarnation->next,session->incarnations);
 	//we release the read lock
 	read_unlock(session->sess_lock);
 	return incarnation;
 }
 
-/** \brief Removes the given incarantion.
- * \param[in] session The session containing the incarantion to be removed.
- * \param[in] filedes The file descriptor that identifies the incarantion
+/** \brief Removes the given incarnation.
+ * \param[in] session The session containing the incarnation to be removed.
+ * \param[in] filedes The file descriptor that identifies the incarnation
  * \param[in] pid The pid of the owner of the incarnation.
- * \param[in] force If set to ::OVERWRITE_ORIG it will overwrite the orignal file with the content of the incarnation which is going to be removed, otherwise the current incarnation is simply removed.
+ * \param[in] force If set to ::OVERWRITE_ORIG it will overwrite the original file with the content of the incarnation which is going to be removed, otherwise the current incarnation is simply removed.
  * \param[out] pathname The pathname to the incarnation which must be closed and removed by the shared library.
- * Searches the incarantion list for the current incarantion, copies the contents of the incarnation over the original file (if ::force is not set) and removes it from the list.
+ * Searches the incarnation list for the current incarnation, copies the contents of the incarnation over the original file (if ::force is not set) and removes it from the list.
  * Then it frees the memory,leaving to the userspace library the task to close and remove the file.
  *
  * **NOTE**: This method must be protected by obtaining the write lock on the ::incarnation parent ::session, otherwise we
@@ -299,7 +300,7 @@ int delete_incarnation(struct session* session,int filedes, pid_t pid,int overwr
 		incarnation=llist_entry(it->next, struct incarnation, next);
 		sessions->incarnations.first=incarnation->next;
 		isfirst=1;
-		
+
 	}
 	if(!isfirst){
 		llist_for_each(it,first){
@@ -314,7 +315,8 @@ int delete_incarnation(struct session* session,int filedes, pid_t pid,int overwr
 			}
 		}
 	}
-	if(overwrite==OVERWRITE_ORIG){
+	/// \todo TODO: check if the overwrite param is really necessary
+	if(overwrite==OVERWRITE_ORIG && incarnation->status == VALID_NODE){
 		//before freeing the memory we copy the content of the current incarnation in the original file
 		res=copy_file(incarnation->file,session->file);
 		if(res<0){
@@ -338,7 +340,7 @@ int init_manager(void){
 	return 0;
 }
 
-/** To create a new sesssion we check if there origianl file was already openeded with session semantic, if necessary we
+/** To create a new session we check if there original file was already openeded with session semantic, if necessary we
  * open it creating the correspoding session object, and then we create a new incarnation of the original file.
  */
 struct incarnation* create_session(const char* pathname, int flags, pid_t pid){
@@ -360,9 +362,9 @@ struct incarnation* create_session(const char* pathname, int flags, pid_t pid){
 	return incarnation;
 }
 
-/** This function will close one sesssion, by finding the incarnation (from the original file pathname, owner pid
- * and file descriptor), copying the incarnation over the original file (atomically in respect to other session operations on the same original file) and delete the incarantion.
- * If after the incarnation deletion the session has no other incarnation the it will also schedule the session to 
+/** This function will close one session, by finding the incarnation (from the original file pathname, owner pid
+ * and file descriptor), copying the incarnation over the original file (atomically in respect to other session operations on the same original file) and delete the incarnation.
+ * If after the incarnation deletion the session has no other incarnation the it will also schedule the session to
  * be destroyed.
  */
 int  close_session(char* pathname, int fdes, pid_t pid, const char** incarnation_pathname){
@@ -371,21 +373,19 @@ int  close_session(char* pathname, int fdes, pid_t pid, const char** incarnation
 	struct session* session=NULL;
 	session=search_session(pathname);
 	if(session==NULL){
-		/// \todo send SIGPIPE
 		return -EBADF;
 	}
 	//we get the write lock on the session
 	write_lock(session->sess_lock);
 	//we check if the session if still valid
-	if(session->valid==INVALID_SESSION){
-		///\todo send SIGPIPE
+	if(session->valid!=VALID_NODE){
 		return -EBADF;
 	}
 	//we eliminate the incarnation and we overwrite the original file with the incarnation content.
-	res=delete_incarnation(session, fdes, pid,OVERWRITE_ORIG);
+	res=delete_incarnation(session, fdes, pid,OVERWRITE_ORIG,incarnation_pathname);
 	write_unlock(session->sess_lock);
 	//we check if the list of incarnations is empty
-	if(llist_empty(session->incarations)){
+	if(llist_empty(session->incarnations)){
 		//we get the spinlock over the session list, to avoid runing concurrently with another list modification primitive
 		spin_lock(sessions_lock);
 		//we can remove the current session object from the rcu list
@@ -397,7 +397,6 @@ int  close_session(char* pathname, int fdes, pid_t pid, const char** incarnation
 	}
 	if(res<0){
 		//we report that the original file is now invalid, since we have failed in the copy
-		/// \todo check if SIGPIPE should be sent
 		return res;
 	}
 	return 0;
@@ -405,11 +404,11 @@ int  close_session(char* pathname, int fdes, pid_t pid, const char** incarnation
 
 /**
  * **DO NOT** call this method BEFORE having unregistered the device since it will mess up the rculist and each incarnation list.
- * 
+ *
  * This method will walk through the rcu list and each incarnation list, deleting all the
  * incarnations and sessions, leaving the original files untouched.
- * 
- * **NOTE**: For incarnations that have not been closed we leave the files in the folder, since can't remove them from kernel space. 
+ *
+ * **NOTE**: For incarnations that have not been closed we leave the files in the folder, since can't remove them from kernel space.
  */
 void release_manager(void){
 	struct session* session=NULL;
@@ -419,7 +418,7 @@ void release_manager(void){
 	//we take the spinlock to be sure to be the last to have accessed this list
 	spin_lock(sessions_lock);
 	session_it=sessions->next;
-	/// \todo check if we need to be protected against concurrent rcu reads
+	/// \todo TODO check if we need to be protected against concurrent rcu reads
 	while(session_it != NULL){
 		session=list_entry(session_it,struct session,list_node);
 		session_it=session_it->next;
@@ -431,7 +430,7 @@ void release_manager(void){
 			while(llist_node != NULL){
 				incarnation=llist_entry(llist_node,struct incarnation,next);
 				llist_node=llist_node->next;
-				/// \todo remove the incarnation file descriptor
+				/// \todo TODO remove the incarnation file descriptor
 				filp_close(incarnation->file);
 				kfree(pathname);
 				kfree(incarnation);
