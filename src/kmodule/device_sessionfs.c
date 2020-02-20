@@ -33,8 +33,16 @@
 //for get_pid_task
 #include <linux/pid.h>
 
+// dentry management
+#include<linux/namei.h>
+#include<linux/path.h>
+#include<linux/dcache.h>
+
 ///The default session path when the device is initialized
 #define DEFAULT_SESS_PATH "/mnt"
+
+/// Indicates that the given path is contained in ::sess_path
+#define PATH_OK 1
 
 /// \brief parameter that keeps the path to the directory in which session sematic is enabled
 ///\todo TODO check if this varaible must be protected from concurrent access
@@ -53,6 +61,41 @@ static struct class* dev_class=NULL;
 ///Device object
 static struct device* dev=NULL;
 
+/** \brief Check if the given path is a subpath of \ref sess_path
+*
+* Gets the dentry from the given path and from  \ref sess_path and check is the second dentry is an ancestor of the first dentry.
+* \todo implement!
+* \param[in] path Path to be checked
+* \returns 1 if the given path is a subpath of \ref sess_path and 0 otherwise; -1 is returned on error.
+*/
+int path_check(char* path){
+	struct path psess,pgiven;
+	struct dentry *dsess,*dgiven, *dentry;
+	int retval;
+	//get dentry from the sess_path
+	retval=kern_path(sess_path,LOOKUP_FOLLOW,&psess);
+	if(retval!=0){
+		return retval;
+	}
+	dsess=psess.dentry;
+	//get dentry from given path
+	retval=kern_path(path,LOOKUP_FOLLOW,&pgiven);
+	if(retval!=0){
+		return retval;
+	}
+	dgiven=pgiven.dentry;
+
+	dentry=dgiven;
+	//check if dsess is an ancestor of dgiven
+	while(!IS_ROOT(dentry)){
+		if(dentry == dsess){
+			return PATH_OK;
+		} else{
+			dentry=dentry->d_parent;
+		}
+	}
+	return 0;
+}
 
 /** \brief Get the path in which sessions are enabled.
  * \param[out] buffer The buffer in which the path is copied.
@@ -134,6 +177,7 @@ static char *sessionfs_devnode(struct device *dev, umode_t *mode)
 int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 	const char* orig_pathname=NULL;
 	int res;
+	int flag;
 	struct sess_params* p;
 	p=kzalloc(sizeof(struct sess_params), GFP_KERNEL);
 	if(!p){
@@ -143,7 +187,7 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 	res=copy_from_user(p,param,sizeof(struct sess_params));
 	if(res>0){
 		kfree(p);
-		return -EINVAL
+		return -EINVAL;
 	}
 	// allocating space for the original file pathname
 	pathname=kzalloc(sizeof(char)*PATH_MAX, GFP_KERNEL);
@@ -151,15 +195,30 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 		kfree(p);
 		return -ENOMEM;
 	}
+
 	//we try to initialize the sess_params::inc_pathname with a sequence of 0, to see if it is a valid userspace memory address
 	res=copy_to_user(p->inc_pathname,pathname,sizeof(char)*PATH_MAX);
 	if(res>0){
 		kfree(pathname);
 		kfree(p);
-		return -EINVAL
+		return -EINVAL;
 	}
 	switch(num){
 		case IOCTL_SEQ_OPEN:
+			//we check that the orginal file pathname has ::sess_path as ancestor
+			res=path_check(pathname);
+			if(res != PATH_OK){
+				return -EINVAL;
+			}
+			if(res<0){
+				return res;
+			}
+			//we check if the flags include O_SESS and remove to avoid causing trouble for the open function
+			if(p->flags & O_SESS){
+				flag=p->flags & ~O_SESS;
+			}else {
+				return -EINVAL;
+			}
 			//copy the pathname string to kernel space
 			res=copy_from_user(pathname,p->orig_path,sizeof(char)*PATH_MAX);
 			if(res>0){
@@ -169,7 +228,7 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 			}
 			//we create a new session incarnation
 			struct incarnation* inc=NULL;
-			inc=create_session(pathname,p->flags,p->pid);
+			inc=create_session(pathname,flag,p->pid);
 			//return the error if we have failed in creating the session
 			if(IS_ERR(inc)){
 				kfree(p);

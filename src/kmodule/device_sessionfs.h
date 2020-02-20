@@ -27,6 +27,9 @@
 /// The ioctl sequence number that idenfies the closing of a session.
 #define IOCTL_SEQ_CLOSE 1
 
+///The `O_SESS` flag, which will enable session semantic if used with a compliant path
+#define O_SESS 00000004
+
 /**
  * \struct sess_params
  * \param orig_path The pathname of the original file to be opened in a session
