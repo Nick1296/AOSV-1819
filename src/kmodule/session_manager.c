@@ -31,7 +31,28 @@
 //for the O_* flags
 #include <uapi/asm-generic/fcntl.h>
 
+///The structs that represent sessions, incarnation and their informations.
+#include "session_types.h"
+
+///The module that handles session information
+#include "session_info.h"
+
 #include "session_manager.h"
+
+/// Used to toggle the necessity of a file descriptor in ::open_file.
+#define NO_FD 0
+
+///Permissions to be given to the newly created files.
+#define DEFAULT_PERM 0644
+
+///Used to determine if a session node is valid.
+#define VALID_NODE 0
+
+///The portion of the file which is copied at each read/write iteration
+#define DATA_DIM 512
+
+///Used to determine if the content of the incarnation must overwrite the original file on close
+#define OVERWRITE_ORIG 0
 
 ///List of the active sessions.
 struct list_head sessions;
@@ -154,6 +175,17 @@ struct session* init_session(const char* pathname,int flags){
 	node->incarnations=LLIST_HEAD_INIT(incarnations);
 	//we flag the session as valid
 	node->valid=VALID_NODE;
+	//we update the info on the device kobject
+	res=add_session_info(node->pathname,&(node->info));
+	if(res<0 || res==NULL){
+		kfree(node->pathname);
+		kfree(node);
+		spin_unlock(sessions_lock);
+		if(res<0){
+			return res;
+		}
+		return -ENOMEM;
+	}
 	// we insert the new session in the rcu list
 	rcu_list_add(node,sessions);
 	//we release the spinlock
@@ -168,6 +200,7 @@ struct session* init_session(const char* pathname,int flags){
 void delete_session(struct session* session){
 	//before deleting the session we grab the write lock to make sure that we don't deallocate the session while someone is reading it
 	write_lock(session->sess_lock);
+	remove_session_info(&(session->sess_info));
 	filp_close(session->file,NULL);
 	/// \todo TODO check if we need to deallocate the struct file for the original file.
 	kfree(session->pathname);
@@ -249,6 +282,13 @@ struct incarnation* create_incarnation(struct session* session, int flags, pid_t
 		kfree(pathname);
 		return -ENOMEM;
 	}
+	//we add the information on the new incarnation
+	res=add_incarnation_info(&(session->sess_info),&(incarnation->inc_attr),pid);
+	if(res<0){
+		read_unlock(session->sess_lock);
+		kfree(pathname);
+		return res;
+	}
 	//we try to open the file
 	int fd;
 	struct file** file;
@@ -315,6 +355,8 @@ int delete_incarnation(struct session* session,int filedes, pid_t pid,int overwr
 			}
 		}
 	}
+	//we remove the information on the incarnation
+	remove_incarnation_info(&(session->sess_info),&(incarnation->inc_attr));
 	/// \todo TODO: check if the overwrite param is really necessary
 	if(overwrite==OVERWRITE_ORIG && incarnation->status == VALID_NODE){
 		//before freeing the memory we copy the content of the current incarnation in the original file

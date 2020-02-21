@@ -8,61 +8,8 @@
 
 #include <linux/types.h>
 
-/// Used to toggle the necessity of a file descriptor in ::open_file.
-#define NO_FD 0
-
-///Permissions to be given to the newly created files.
-#define DEFAULT_PERM 0644
-
-///Used to determine if a session node is valid.
-#define VALID_NODE 0
-
-///The portion of the file which is copied at each read/write iteration
-#define DATA_DIM 512
-
-///Used to determine if the content of the incarnation must overwrite the original file on close
-#define OVERWRITE_ORIG 0
-
-/** \struct incarnation
- * \brief Informations on an incarnation of a file.
- * \param next Next incarnation on the list.
- * \param file The struct file that represents the incarantion file.
- * \param pathname The pathanme of the incarnation file.
- * \param filedes File descriptor of the incarnation.
- * \param owner_pid Pid of the process that has requested the incarnation.
- * \param status Contains the error code that could have invalidated the session. If its value is less than 0 then the incarnation is invalid and must be closed as soon as possible.
- */
-struct incarnation{
-	struct llist_node* next;
-	struct file* file;
-	const char* pathname;
-	int filedes;
-	pid_t owner_pid;
-	int status;
-};
-
-
-/** \struct session
- * \brief General information on a session.
- * \param list_node used to navigate the list of sessions.
- * \param rcu_head The rcu head structure used to protect the list with RCU.
- * \param incarnations List (lockless) of the active incarnations of the file.
- * \param file The struct file that represents the original file.
- * \param pathame Pathname of the file that is opened with session semantic.
- * \param sess_lock read-write lock used to access ensure serialization in the session closures.
- * \param filedes Descriptor of the file opened with session semantic.
- * \param valid This parameter is used (after having gained the rwlock) to check if the session object is still attached to the rculist.
- * If the session object has been removed from the rculist the value of this parameter will be different from ::VALID_NODE.
- */
-struct session{
-	struct list_head list_node;
-	struct rcu_head rcu_head;
-	struct llist_head incarnations;
-	struct file* file;
-	const char* pathname;
-	rwlock_t sess_lock;
-	int valid;
-};
+///The structs that represent sessions, incarnation and their informations.
+#include "session_types.h"
 
 /** \brief Initialization of the session manager data structures
  * \returns 0 on success or an error code.

@@ -11,6 +11,8 @@
 #include "device_sessionfs_mod.h"
 ///Our session manager module
 #include "session_manager.h"
+///The module that handles the infornation on sessions
+#include "session_info.h"
 
 // for file_operations struct, register_chrdev unregister_chrdev
 #include <linux/fs.h>
@@ -32,6 +34,8 @@
 #include <linux/sched/signal.h>
 //for get_pid_task
 #include <linux/pid.h>
+//for struct task_struct
+#include <linux/sched.h>
 
 // dentry management
 #include<linux/namei.h>
@@ -208,9 +212,13 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 			//we check that the orginal file pathname has ::sess_path as ancestor
 			res=path_check(pathname);
 			if(res != PATH_OK){
+				kfree(pathname);
+				kfree(p);
 				return -EINVAL;
 			}
 			if(res<0){
+				kfree(pathname);
+				kfree(p);
 				return res;
 			}
 			//we check if the flags include O_SESS and remove to avoid causing trouble for the open function
@@ -336,12 +344,15 @@ int init_device(void){
 			return PTR_ERR(dev);
    }
 	printk("SessionFS driver registered successfully\n");
+	init_info(dev->kobj);
 	return 0;
 }
 
 /** Unregister the device, releases the session manager and frees the used memory ( ::dev_ops and ::sess_path)
  */
 void release_device(void){
+	//remove the info on sessions
+	release_info();
 	//unregister the device
 	device_destroy(dev_class,MKDEV(MAJOR_NUM,0));
 	class_unregister(dev_class);
