@@ -11,8 +11,8 @@ clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(shell pwd) clean
 	rm userspace_test userspace_test.o
 
-	#quick test to see if the module is loaded correctly
-insmod:
+#quick test to see if the module is loaded correctly
+test:
 	sudo dmesg -C
 	sudo insmod SessionFS.ko
 	./userspace_test
