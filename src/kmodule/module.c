@@ -18,7 +18,7 @@
 */
 
 /// \todo check if this imports are the minimum number of imports that we need
-//#include <linux/init.h> TODO check is this import is necessary
+//#include <linux/init.h> check is this import is necessary
 #include <linux/kernel.h>
 #include <linux/module.h>
 

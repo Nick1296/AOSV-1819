@@ -36,6 +36,8 @@
 #include <linux/pid.h>
 //for struct task_struct
 #include <linux/sched.h>
+//for spinlock APIs
+#include <linux/spinlock.h>
 
 // dentry management
 #include<linux/namei.h>
@@ -47,6 +49,9 @@
 
 /// Indicates that the given path is contained in ::sess_path
 #define PATH_OK 1
+
+///Lock that protects the session path from concurrent accesses.
+rwlock_t dev_lock;
 
 /// \brief parameter that keeps the path to the directory in which session sematic is enabled
 ///\todo TODO check if this varaible must be protected from concurrent access
@@ -112,14 +117,16 @@ int path_check(char* path){
  */
 static ssize_t device_read(struct file* file, char* buffer,size_t buflen,loff_t* offset){
 	int bytes_not_read=0;
-#ifdef DEBUG
 	printk(KERN_DEBUG, "reading session path\n");
-#endif
 	// some basic sanity checks over arguments
 	if(buffer==NULL || buflen<path_len){
 		return -EINVAL;
 	}
+	printk(KERN_DEBUG, "read locking dev_lock");
+	read_lock(dev_lock);
 	bytes_not_read=copy_to_user(buffer,sess_path,path_len);
+	read_unlock(dev_lock);
+	printk(KERN_DEBUG, "read releasing dev_lock");
 	if(bytes_not_read>0){
 		return -EAGAIN;
 	}
@@ -138,11 +145,15 @@ static ssize_t device_read(struct file* file, char* buffer,size_t buflen,loff_t*
 static ssize_t device_write(struct file* file,const char* buffer,size_t buflen,loff_t* offset){
 	int bytes_not_written=0;
 	// some basic sanity checks over arguments
-	if(buffer==NULL || buflen>path_len){
+	if(buffer==NULL || buflen>PATH_MAX){
 		return -EINVAL;
 	}
+	printk(KERN_DEBUG, "write locking dev_lock");
+	write_lock(dev_lock);
 	bytes_not_written=copy_from_user(sess_path,buffer,buflen);
-
+	path_len=buflen;
+	write_unlock(dev_lock);
+	printk(KERN_DEBUG "write locking dev_lock");
 	if(bytes_not_written>0){
 		return -EAGAIN;
 	}
@@ -304,6 +315,8 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
  */
 int init_device(void){
 	int res;
+	//we initialize the read-write lock
+	rwlock_init(dev_lock);
 	// allocate the path buffer and path_len
 	sess_path=kzalloc(PATH_MAX*sizeof(char),GFP_KERNEL);
 	strcpy(sess_path,DEFAULT_SESS_PATH);
