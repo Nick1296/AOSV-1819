@@ -97,23 +97,43 @@ int open_file(const char* pathname, int flags,int fd_needed, struct file** file)
 }
 /** \brief Searches for a session with a given pathname.
  * \param pathname The pathname that identifies the session.
+ * \param filedes The file descriptor of an incarantion.
+ * \param pid The pid of the process that owns the incarnation.
  * \returns A pointer to the found session object or NULL.
  * Searches by navigating the rcu list a session which matches the given ::pathname.
+ * If pathname is NULL and filedes is differrent from ::NO_FD then it searches for the session that contains
  */
-struct session* search_session(const char* pathname){
+struct session* search_session(const char* pathname,int filedes, pid_t pid){
+	//paramters check
+	if(pathname==NULL && filedes==NO_FD){
+		return NULL;
+	}
+	struct incarnation *inc_it,*inc_tmp;
 	//we get the first element of the session list
-	struct session* session_it=NULL;
+	struct session *session_it=NULL, *found=NULL;
 	//we get the read lock on the rcu
 	rcu_read_lock();
 	session_it= list_first_or_null_rcu(&sessions,struct session,list_node);
 	//we need to walk all the list to see if we have alredy other sessions opened for the same pathname
 	list_for_each_entry_rcu(session_it,&sessions,list_node,NULL){
 		if(session_it != NULL && strcmp(session_it->pathname,pathanme) == 0){
-			break;
+			found=session_it;
+			if(filedes > NO_FD){
+				/// \todo verify if we can traverse the list without removing all the entries
+				llist_for_each_entry_safe(inc_it,inc_tmp,found->incarnations->first,next){
+					if(inc_it->owner_pid==pid && inc_it->filedes==filedes){
+						rcu_read_unlock();
+						return found;
+					}
+				}
+			} else {
+				rcu_read_unlock();
+				return found;
+			}
 		}
 	}
 	rcu_read_unlock();
-	return session_it;
+	return found;
 }
 
 /**
@@ -285,8 +305,10 @@ struct incarnation* create_incarnation(struct session* session, int flags, pid_t
 	//we add the information on the new incarnation
 	res=add_incarnation_info(&(session->sess_info),&(incarnation->inc_attr),pid);
 	if(res<0){
+		remove_incarnation_info(session->sess_info,&(incarnation->inc_attr));
 		read_unlock(session->sess_lock);
 		kfree(pathname);
+		kfree(incarnation);
 		return res;
 	}
 	//we try to open the file
@@ -301,6 +323,7 @@ struct incarnation* create_incarnation(struct session* session, int flags, pid_t
 	}
 	//we copy the original file in the new incarnation
 	res=copy_file(session->file,file);
+	// we save the copy result in the status member of the struct
 	incarnation->status=res;
 	incarnation->session_info=session;
 	incarnation->file=file;
@@ -409,11 +432,11 @@ struct incarnation* create_session(const char* pathname, int flags, pid_t pid){
  * If after the incarnation deletion the session has no other incarnation the it will also schedule the session to
  * be destroyed.
  */
-int  close_session(char* pathname, int fdes, pid_t pid, const char** incarnation_pathname){
+int  close_session(int fdes, pid_t pid, const char** incarnation_pathname){
 	//we locate the session in which we need to remove an incarnation
 	int res=0;
 	struct session* session=NULL;
-	session=search_session(pathname);
+	search_session(NULL,fdes,pid);
 	if(session==NULL){
 		return -EBADF;
 	}

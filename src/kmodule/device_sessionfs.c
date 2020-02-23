@@ -211,13 +211,7 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 		return -ENOMEM;
 	}
 
-	//we try to initialize the sess_params::inc_pathname with a sequence of 0, to see if it is a valid userspace memory address
-	res=copy_to_user(p->inc_pathname,pathname,sizeof(char)*PATH_MAX);
-	if(res>0){
-		kfree(pathname);
-		kfree(p);
-		return -EINVAL;
-	}
+
 	switch(num){
 		case IOCTL_SEQ_OPEN:
 			//we check that the orginal file pathname has ::sess_path as ancestor
@@ -256,7 +250,9 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 			}
 			//now we must check that the created session is valid
 			if(inc->status<0){
+				p->valid=inc->status;
 				//we copy the incarnation pathname into the corresponding parameter in the sess_struct.
+				/// \todo check is this is really necessary (it shouldn't be needed)
 				res=copy_to_user(p->inc_pathname,inc->pathname,sizeof(char)*PATH_MAX);
 				if(res>0){
 					//this should not happen since we have alredy tried to copy into this struct at the beginning.
@@ -265,6 +261,8 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 					return -EINVAL
 				}
 			}
+			//we flag the incarnation as valid.
+			p->valid=VALID_SESS;
 			//we set the file descriptor into the sess_struct.
 			p->filedes=inc->filedes;
 			//we overwrite the existing sess_struct in userspace
@@ -276,10 +274,19 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 			}
 			return inc->status;
 			break;
+
 		case IOCTL_SEQ_CLOSE:
+			/// \todo check all of this!
 			int res=0;
 			char* inc_pathname=NULL;
-			res=close_session(pathname,p->filedes,p->pid,&inc_pathname);
+			//we try to initialize the sess_params::inc_pathname with a sequence of 0, to see if it is a valid userspace memory address
+			res=copy_to_user(p->inc_pathname,pathname,sizeof(char)*PATH_MAX);
+			if(res>0){
+				kfree(pathname);
+				kfree(p);
+				return -EINVAL;
+			}
+			res=close_session(p->filedes,p->pid,&inc_pathname);
 			kfree(pathname);
 			if(res<0){
 				//we get the task struct of the user process
@@ -297,7 +304,7 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 			res=copy_to_user(p->inc_pathname,inc_pathname,sizeof(char)*PATH_MAX);
 			kfree(inc_pathname);
 			if(res>0){
-				//this should not happen since we have alredy tried to copy into this struct at the beginning.
+				//this should not happen since we have already tried to copy into this struct at the beginning.
 				kfree(p);
 				return -EAGAIN
 			}

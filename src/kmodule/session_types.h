@@ -24,10 +24,10 @@ struct sess_info{
  * \param pathname The pathanme of the incarnation file.
  * \param filedes File descriptor of the incarnation.
  * \param owner_pid Pid of the process that has requested the incarnation.
- * \param status Contains the error code that could have invalidated the session. If its value is less than 0 then the incarnation is invalid and must be closed as soon as possible.
+ * \param status Contains the error code that could have invalidated the incarnation. If its value is less than 0 then the incarnation is invalid and must be closed as soon as possible.
  */
 struct incarnation{
-	struct llist_node* next;
+	struct llist_node next;
 	struct file* file;
 	struct kobj_attribute inc_attr;
 	const char* pathname;

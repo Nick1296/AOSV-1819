@@ -1,21 +1,25 @@
 .phony: shared_lib shared_lib-test demo-prog demo-prog-test all all-test
 
-all: shared-lib demo-lib
+all: shared-lib demo-lib kmodule
 
 wrap: demo-wrap
+
+kmodule:
+		$(MAKE) -C kmodule
 
 shared-lib:
 		$(MAKE) -C shared_lib
 
-demo-lib: shared-lib
+demo-lib: shared-lib kmodule
 		$(MAKE) -C demo
 
-demo-wrap:
+demo-wrap: kmodule
 		$(MAKE) -C demo demo-wrap
 
 clean:
 		$(MAKE) -C shared_lib clean
 		$(MAKE) -C demo clean
+		$(MAKE) -C kmodule clean
 
 wrap-test:
 		demo/demo

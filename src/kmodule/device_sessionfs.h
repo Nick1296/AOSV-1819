@@ -11,7 +11,7 @@
 #include <linux/types.h>
 
 /** A major device number is necessary to identify our virtual device, since it doensn't have an assigned letter.
- * We use 120 as major number since it reserved for local and experimental use. <a href="Documentation/admin-guide/devices.txt">Source</a>
+ * We use 120 as major number since it reserved for local and experimental use. See: Documentation/admin-guide/devices.txt
  */
 #define MAJOR_NUM 120
 
@@ -30,10 +30,18 @@
 ///The `O_SESS` flag, which will enable session semantic if used with a compliant path
 #define O_SESS 00000004
 
+
+///Defines the validity of a session
+#define VALID_SESS 0
 /**
  * \struct sess_params
- * \param orig_path The pathname of the original file to be opened in a session
- * We define a struct that will hold the pathanme and flags that determine the behaviour of the session opening
+ * \param orig_path The pathname of the original file to be opened in a session.
+ * \param flags The flags used to determine the incarnation permissions.
+ * \param pid The pid of the process that requests the creation of an incarnation.
+ * \param inc_path The path to the incarnation file.
+ * \param filedes The file descriptor of the incarnation.
+ * \param valid The session can be invalid if there was an error in the copying of the original file over the incarnation file, so the value of this parameter can be < VALID_SESS.
+ * We define a struct that will hold the pathanme and flags that determine the behaviour of the session opening.
 */
 struct sess_params{
 	const char* orig_path;
@@ -41,6 +49,7 @@ struct sess_params{
 	pid_t pid;
 	const char* inc_path;
 	int filedes;
+	int valid;
 };
 
 /** We define the ioctl command for opening a session.

@@ -28,12 +28,11 @@ void release_manager(void);
 struct incarnation* create_session(const char* pathname, int flags, pid_t pid);
 
 /** \brief Closes a session.
- * \param[in] pathname The pathname to the original file.
  * \param[in] fdes The file descriptor of a session incarnation.
  * \param[in] pid The owner process pid.
  * \param[out] incarnation_pathname the pathname for the incarnation that is being closed.
  * \return 0 on success or an error code.
  * \todo handle tha absence of the `O_WRITE` flag when closing.
  */
-int close_session(char* pathname, int fdes, pid_t pid,const char** incarnation_pathname);
+int close_session(int fdes, pid_t pid,const char** incarnation_pathname);
 #endif
