@@ -7,7 +7,7 @@
 #ifndef DEV_H
 #define DEV_H
 
-#include <uapi/asm-generic/ioctl.h>
+#include <linux/ioctl.h>
 #include <linux/types.h>
 
 /** A major device number is necessary to identify our virtual device, since it doensn't have an assigned letter.
@@ -47,7 +47,7 @@ struct sess_params{
 	const char* orig_path;
 	int flags;
 	pid_t pid;
-	const char* inc_path;
+	char* inc_path;
 	int filedes;
 	int valid;
 };

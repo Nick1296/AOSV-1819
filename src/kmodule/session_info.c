@@ -4,26 +4,20 @@
 
 ///The module that handles the session information
 #include "session_info.h"
-
+#include "session_types.h"
 //for spinlocks APIs
 #include <linux/spinlock.h>
-//for PAGE_SIZE
-#include <asm-generic/page.h>
 //for container_of
-#include <linux/kernel>
+#include <linux/kernel.h>
 //for get_pid_task
 #include <linux/pid.h>
 //for struct task_struct
 #include <linux/sched.h>
+//for memory APIs
+#include <linux/slab.h>
 
 ///Kernel objects attributes are read only, since we only get information on session
 #define KERN_OBJ_PERM 0444
-
-///The device kobject provided during ::init_info.
-struct kobject* dev_kobj;
-
-///The kernel attribute that will contain the number of open sessions.
- struct kobj_attribute kattr;
 
 ///The number of opened sessions
  int sessions_num;
@@ -38,8 +32,8 @@ spinlock_t kobj_lock; /// \todo verify if its really necessary
  * \returns The number of bytes read (in [0,PAGE_SIZE]).
  * The file content is the number of active sessions
  */
- ssize_t show_sess_num(struct kobject *obj, struct kobj_attribute *attr, char* buf){
-	 return scnprintf(buf,PAGE_SIZE,"%d",session_num);
+ ssize_t active_sessions_num_show(struct kobject *obj, struct kobj_attribute *attr, char* buf){
+	 return scnprintf(buf,PAGE_SIZE,"%d",sessions_num);
 }
 
 /** \brief The function used to read the SysFS `active_incarnations_num` attribute file.
@@ -49,8 +43,8 @@ spinlock_t kobj_lock; /// \todo verify if its really necessary
  * \returns The number of bytes read (in [0,PAGE_SIZE]).
  * The file content returned is the number of active incarnations for the current original file.
  */
- ssize_t show_inc_num(struct kobject *obj, struct kobj_attribute *attr, char* buf){
-	 struct sess_info* info=container_of(obj,struct sess_info,kobj);
+ ssize_t active_incarnations_num_show(struct kobject *obj, struct kobj_attribute *attr, char* buf){
+	 struct sess_info* info=container_of(&obj,struct sess_info,kobj);
 	 return scnprintf(buf,PAGE_SIZE,"%d",info->inc_num);
 }
 
@@ -61,26 +55,39 @@ spinlock_t kobj_lock; /// \todo verify if its really necessary
  * \returns The number of bytes read (in [0,PAGE_SIZE]).
  * The file content is the process name that corresponds to the pid used as filename.
  */
- ssize_t show_proc_name(struct kobject *obj, struct kobj_attribute *attr, char* buf){
-	 struct incarnation* inc=container_of(obj,struct incarnation,inc_attr);
+ ssize_t proc_name_show(struct kobject *obj, struct kobj_attribute *attr, char* buf){
+	 struct incarnation* inc=container_of(attr,struct incarnation,inc_attr);
 	 //we get the task struct containing the process name
 	 struct task_struct* task;
-	 task=get_pid_task(p->pid,PIDTYPE_PID);
-	 return scnprintf(buf,PAGE_SIZE,"%d",task->comm);
+	 struct pid* pid;
+	 char* name="ERROR: process not found";
+	 pid=find_get_pid(inc->owner_pid);
+	 if(!IS_ERR(pid) && pid){
+		task=get_pid_task(pid,PIDTYPE_PID);
+		if(!IS_ERR(task) && task){
+			name=task->comm;
+		}
+	 }
+	 return scnprintf(buf,PAGE_SIZE,"%s",name);
 }
 
 /// \todo TODO check if a kset can be useful to group the session original files
+
+///The device kobject provided during ::init_info.
+struct kobject* dev_kobj;
+
+///The kernel attribute that will contain the number of open sessions.
+struct kobj_attribute kattr= __ATTR_RO(active_sessions_num);
 
 /** We add an attribute called `active_sessions_num` to the SessionFS device, which is only readable and its content is the number of active sessions.
  */
  int init_info(struct kobject* device_kobj){
 	int res;
 	//we initialize the spinlock
-	spinlock_init(kobj_lock);
+	spin_lock_init(&kobj_lock);
 	//we initialize the session_num
 	sessions_num=0;
 	//we create the session_num attribute
-	kattr=__ATTR("active_sessions_num",KERN_OBJ_PERM,show_sess_num,NULL);
 	//we add the attribute to the device
 	res=sysfs_create_file(device_kobj,&(kattr.attr));
 	if(res<0){
@@ -98,81 +105,98 @@ sysfs_remove_file(dev_kobj,&(kattr.attr));
 /** We add a new folder in sysfs which is represented by the given kobject.
  * The ::session kobject will be created as a child of ::dev_kobj.
  */
-struct kobject* add_session_info(const char* name,struct sess_info* session){
+int add_session_info(const char* name,struct sess_info* session){
+	int res;
 	//we get the lock
-	spin_lock(kobj_lock);
+	spin_lock(&kobj_lock);
 	//we get the root kobject
 	kobject_get(dev_kobj);
 	//we add the session kobject as a child of the root kobject
 	session->kobj=kobject_create_and_add(name,dev_kobj);
 	if(!session->kobj){
 		kobject_put(dev_kobj);
-		spin_unlock(kobj_lock);
-		return NULL;
+		spin_unlock(&kobj_lock);
+		return -ENOMEM;
 	}
 	//we initialize the number of incarnations as a kobj_attribute
 	session->inc_num=0;
-	*(sess_info->inc_num_attr)=__ATTR("active_incarnations_num",KERN_OBJ_PERM,show_inc_num,NULL);
+	session->inc_num_attr.attr.name="active_incarnations_num";
+	session->inc_num_attr.attr.mode=VERIFY_OCTAL_PERMISSIONS(KERN_OBJ_PERM);
+	session->inc_num_attr.show=active_incarnations_num_show;
+	session->inc_num_attr.store=NULL;
 	//we add the attribute to the device
 	res=sysfs_create_file(session->kobj,&(session->inc_num_attr.attr));
-	spin_unlock(kobj_lock);
+	spin_unlock(&kobj_lock);
 	if(res<0){
 		kobject_put(dev_kobj);
 		kobject_del(session->kobj);
 		return res;
 	}
-	return session;
+	return 0;
 }
 
 /** Removes the corresponding entry in the parent SysFS folder
  */
 void remove_session_info(struct sess_info* session){
-	spin_lock(kobj_lock);
+	spin_lock(&kobj_lock);
 	//we remove the number of incarnations attribute
 	sysfs_remove_file(session->kobj,&(session->inc_num_attr.attr));
 	//we put the root kobject
 	kobject_put(dev_kobj);
 	//we remove the entry from the parent folder
-	kobject_del(session);
-	spin_unlock(kobj_lock);
+	kobject_del(session->kobj);
+	spin_unlock(&kobj_lock);
 }
 
 /** The kobject attribute has the process pid as filename and contains the process name.
  * By adding a new incarnation we increment the global number of sessions and the number of incarnation for the original file;
  */
 int add_incarnation_info(struct sess_info* parent_session,struct kobj_attribute* incarnation,pid_t pid){
-	//we get the lock
-	spin_lock(kobj_lock);
+	int res;
+	//we allocate memory for the attribute name
+	char* name=kzalloc(sizeof(char)*512, GFP_KERNEL);
+	if(!name){
+		return -ENOMEM;
+	}
+//we initialize the attribute name
+scnprintf(name,512,"%d",pid);
+//we get the lock
+	spin_lock(&kobj_lock);
 	//we increment the global number of sessions
 	sessions_num++;
 	//we increment the number of incarnations for the original file
-	sess_info->inc_num++;
+	parent_session->inc_num++;
 	//we get the parent kobject
 	kobject_get(parent_session->kobj);
 	//we create the attribute
-	*incarnation=__ATTR(pid,KERN_OBJ_PERM,show_proc_name,NULL);
+	incarnation->attr.name=name;
+	incarnation->attr.mode=VERIFY_OCTAL_PERMISSIONS(KERN_OBJ_PERM);
+	incarnation->show=proc_name_show;
+	incarnation->store=NULL;
 	//we add the attribute to the device
 	res=sysfs_create_file(parent_session->kobj,&(incarnation->attr));
 	if(res<0){
 		kobject_put(parent_session->kobj);
-		session_num--;
-		sess_info->inc_num--;
-		spin_unlock(kobj_lock);
+		sessions_num--;
+		parent_session->inc_num--;
+		spin_unlock(&kobj_lock);
 		return res;
 	}
-	spin_unlock(kobj_lock);
+	spin_unlock(&kobj_lock);
 	return 0;
 }
 
 void remove_incarnation_info(struct sess_info* parent_session,struct kobj_attribute* incarnation){
-	spin_lock(kobj_lock);
+	spin_lock(&kobj_lock);
 	//we decrement the global number of sessions
 	sessions_num--;
 	//we decrement the number of incarnations for the original file
-	sess_info->inc_num--;
+	parent_session->inc_num--;
+	//we free the incarnation name string
+	kfree(incarnation->attr.name);
 	//we remove the number of incarnations attribute
 	sysfs_remove_file(parent_session->kobj,&(incarnation->attr));
 	//we put the parent kobject
 	kobject_put(parent_session->kobj);
-	spin_unlock(kobj_lock);
+	spin_unlock(&kobj_lock);
 }

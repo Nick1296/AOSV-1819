@@ -1,10 +1,10 @@
-.phony: shared_lib shared_lib-test demo-prog demo-prog-test all all-test
+.phony: shared_lib shared_lib-test demo-prog demo-prog-test all all-test module
 
-all: shared-lib demo-lib kmodule
+all: shared-lib demo-lib module
 
 wrap: demo-wrap
 
-kmodule:
+module:
 		$(MAKE) -C kmodule
 
 shared-lib:

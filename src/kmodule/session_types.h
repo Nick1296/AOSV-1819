@@ -5,6 +5,9 @@
 #ifndef SESS_TYPES_H
 #define SESS_TYPES_H
 
+
+#include <linux/kobject.h>
+
 /** \struct sess_info
  * \param kobj The session kernel object.
  * \param inc_num_attr The kernel object attribute that represents the number of incanration for the original file.
@@ -14,7 +17,7 @@ struct sess_info{
 	struct kobject* kobj;
 	struct kobj_attribute inc_num_attr;
 	int inc_num;
-}
+};
 
 /** \struct incarnation
  * \brief Informations on an incarnation of a file.

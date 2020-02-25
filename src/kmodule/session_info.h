@@ -2,7 +2,7 @@
  * \brief Handles the kobjects for the session manager.
  * This file is used to create and manage kobjects for the session manager.
  */
-#ifdef SESSION_INFO_H
+#ifndef SESSION_INFO_H
 #define SESSION_INFO_H
 
 #include <linux/kobject.h>

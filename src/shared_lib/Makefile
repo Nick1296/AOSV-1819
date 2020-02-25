@@ -19,4 +19,4 @@ libsessionfs: $(OBJS)
 		$(CC) $(CCOPTS)  -o libsessionfs.so $(OBJS) $(LIBS)
 
 clean:
-	rm -rf *.o *~  $(BINS)
+	rm -rf *.so *.o *~  $(BINS)

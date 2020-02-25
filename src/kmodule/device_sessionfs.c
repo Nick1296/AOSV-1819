@@ -28,16 +28,14 @@
 #include<linux/module.h>
 //for error numbers
 #include <uapi/asm-generic/errno.h>
-//for signal codes
-#include <uapi/asm-generic/signal.h>
-//for send_sig
-#include <linux/sched/signal.h>
 //for get_pid_task
 #include <linux/pid.h>
 //for struct task_struct
 #include <linux/sched.h>
 //for spinlock APIs
 #include <linux/spinlock.h>
+//for signal apis
+#include <linux/sched/signal.h>
 
 // dentry management
 #include<linux/namei.h>
@@ -65,10 +63,10 @@ int path_len=0;
 struct file_operations* dev_ops=NULL;
 
 ///Device class
-static struct class* dev_class=NULL;
+struct class* dev_class=NULL;
 
 ///Device object
-static struct device* dev=NULL;
+struct device* dev=NULL;
 
 /** \brief Check if the given path is a subpath of \ref sess_path
 *
@@ -77,7 +75,7 @@ static struct device* dev=NULL;
 * \param[in] path Path to be checked
 * \returns 1 if the given path is a subpath of \ref sess_path and 0 otherwise; -1 is returned on error.
 */
-int path_check(char* path){
+int path_check(const char* path){
 	struct path psess,pgiven;
 	struct dentry *dsess,*dgiven, *dentry;
 	int retval;
@@ -117,16 +115,16 @@ int path_check(char* path){
  */
 static ssize_t device_read(struct file* file, char* buffer,size_t buflen,loff_t* offset){
 	int bytes_not_read=0;
-	printk(KERN_DEBUG, "reading session path\n");
+	printk(KERN_DEBUG "reading session path\n");
 	// some basic sanity checks over arguments
 	if(buffer==NULL || buflen<path_len){
 		return -EINVAL;
 	}
-	printk(KERN_DEBUG, "read locking dev_lock");
-	read_lock(dev_lock);
+	printk(KERN_DEBUG "read locking dev_lock");
+	read_lock(&dev_lock);
 	bytes_not_read=copy_to_user(buffer,sess_path,path_len);
-	read_unlock(dev_lock);
-	printk(KERN_DEBUG, "read releasing dev_lock");
+	read_unlock(&dev_lock);
+	printk(KERN_DEBUG "read releasing dev_lock");
 	if(bytes_not_read>0){
 		return -EAGAIN;
 	}
@@ -148,11 +146,11 @@ static ssize_t device_write(struct file* file,const char* buffer,size_t buflen,l
 	if(buffer==NULL || buflen>PATH_MAX){
 		return -EINVAL;
 	}
-	printk(KERN_DEBUG, "write locking dev_lock");
-	write_lock(dev_lock);
+	printk(KERN_DEBUG "write locking dev_lock");
+	write_lock(&dev_lock);
 	bytes_not_written=copy_from_user(sess_path,buffer,buflen);
 	path_len=buflen;
-	write_unlock(dev_lock);
+	write_unlock(&dev_lock);
 	printk(KERN_DEBUG "write locking dev_lock");
 	if(bytes_not_written>0){
 		return -EAGAIN;
@@ -189,40 +187,51 @@ static char *sessionfs_devnode(struct device *dev, umode_t *mode)
  * If the incarnation gets corrupted during creation, the pid is updated as in the successful case, but the incarnation pathname is copied into sess_params::inc_path and the corresponding error code is returned, so that the library can close and remove the corrupted incarnation file.
  * * ::IOCTL_SEQ_CLOSE: closes an open session using ::close_session and updates the ::sess_params struct with the path of the incarnation file which must be closed and removed by the library. If the original file does not exist anymore it sends `SIGPIPE` to the user process.
  */
-int device_ioctl(struct file * file, unsigned int num, unsigned long param){
-	const char* orig_pathname=NULL;
-	int res;
+long int device_ioctl(struct file * file, unsigned int num, unsigned long param){
+	char* orig_pathname=NULL;
+	const  char* inc_pathname=NULL;
+	int res=0;
 	int flag;
-	struct sess_params* p;
+	struct sess_params* p=NULL;
+	struct incarnation* inc=NULL;
+	struct task_struct* task;
+	struct pid* pid;
 	p=kzalloc(sizeof(struct sess_params), GFP_KERNEL);
 	if(!p){
 		return -ENOMEM;
 	}
 	//get the parameters struct from userspace
-	res=copy_from_user(p,param,sizeof(struct sess_params));
+	res=copy_from_user(p,(struct sess_params*)param,sizeof(struct sess_params));
 	if(res>0){
 		kfree(p);
 		return -EINVAL;
 	}
+
 	// allocating space for the original file pathname
-	pathname=kzalloc(sizeof(char)*PATH_MAX, GFP_KERNEL);
-	if(!pathname){
+	orig_pathname=kzalloc(sizeof(char)*PATH_MAX, GFP_KERNEL);
+	if(!orig_pathname){
 		kfree(p);
 		return -ENOMEM;
 	}
 
-
 	switch(num){
 		case IOCTL_SEQ_OPEN:
+			//copy the pathname string to kernel space
+			res=copy_from_user(orig_pathname,p->orig_path,sizeof(char)*PATH_MAX);
+			if(res>0){
+				kfree(p);
+				kfree(orig_pathname);
+				return -EINVAL;
+			}
 			//we check that the orginal file pathname has ::sess_path as ancestor
-			res=path_check(pathname);
+			res=path_check(orig_pathname);
 			if(res != PATH_OK){
-				kfree(pathname);
+				kfree(orig_pathname);
 				kfree(p);
 				return -EINVAL;
 			}
 			if(res<0){
-				kfree(pathname);
+				kfree(orig_pathname);
 				kfree(p);
 				return res;
 			}
@@ -232,20 +241,12 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 			}else {
 				return -EINVAL;
 			}
-			//copy the pathname string to kernel space
-			res=copy_from_user(pathname,p->orig_path,sizeof(char)*PATH_MAX);
-			if(res>0){
-				kfree(p);
-				kfree(pathname);
-				return -EINVAL;
-			}
 			//we create a new session incarnation
-			struct incarnation* inc=NULL;
-			inc=create_session(pathname,flag,p->pid);
+			inc=create_session(orig_pathname,flag,p->pid);
 			//return the error if we have failed in creating the session
 			if(IS_ERR(inc)){
 				kfree(p);
-				kfree(pathname);
+				kfree(orig_pathname);
 				return PTR_ERR(inc);
 			}
 			//now we must check that the created session is valid
@@ -253,12 +254,12 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 				p->valid=inc->status;
 				//we copy the incarnation pathname into the corresponding parameter in the sess_struct.
 				/// \todo check is this is really necessary (it shouldn't be needed)
-				res=copy_to_user(p->inc_pathname,inc->pathname,sizeof(char)*PATH_MAX);
+				res=copy_to_user(p->inc_path,inc->pathname,sizeof(char)*PATH_MAX);
 				if(res>0){
 					//this should not happen since we have alredy tried to copy into this struct at the beginning.
-					kfree(pathname);
+					kfree(orig_pathname);
 					kfree(p);
-					return -EINVAL
+					return -EINVAL;
 				}
 			}
 			//we flag the incarnation as valid.
@@ -266,56 +267,55 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 			//we set the file descriptor into the sess_struct.
 			p->filedes=inc->filedes;
 			//we overwrite the existing sess_struct in userspace
-			res=copy_to_user(param,p,sizeof(struct sess_params));
-			kfree(pathname);
+			res=copy_to_user((struct sess_params*)param,p,sizeof(struct sess_params));
+			kfree(orig_pathname);
 			kfree(p);
 			if(res>0){
 				return -EAGAIN;
 			}
-			return inc->status;
+			res=inc->status;
 			break;
 
 		case IOCTL_SEQ_CLOSE:
-			/// \todo check all of this!
-			int res=0;
-			char* inc_pathname=NULL;
 			//we try to initialize the sess_params::inc_pathname with a sequence of 0, to see if it is a valid userspace memory address
-			res=copy_to_user(p->inc_pathname,pathname,sizeof(char)*PATH_MAX);
+			res=copy_to_user(p->inc_path,orig_pathname,sizeof(char)*PATH_MAX);
+			kfree(orig_pathname);
 			if(res>0){
-				kfree(pathname);
 				kfree(p);
 				return -EINVAL;
 			}
 			res=close_session(p->filedes,p->pid,&inc_pathname);
-			kfree(pathname);
+			kfree(inc_pathname);
 			if(res<0){
 				//we get the task struct of the user process
-				struct task_struct* task;
-				task=get_pid_task(p->pid,PIDTYPE_PID);
-				if(task == NULL){
-					res= -ESRCH;
-				} else {
-					//we send the SIGPIPE
-					res=send_sig(SIGPIPE,task,0);
-					/// \todo TODO check how send_sig works and what it returns
+				pid=find_get_pid(p->pid);
+				if(IS_ERR(pid) || pid==NULL){
+					return -ESRCH;
 				}
+				task=get_pid_task(pid,PIDTYPE_PID);
+				if(task == NULL || IS_ERR(task)){
+					return -ESRCH;
+				}
+				//we send the SIGPIPE
+				res=send_sig(SIGPIPE,task,0);
+				/// \todo TODO check how send_sig works and what it returns
 			}
 			//we give the incarnation pathname to the usersoace so the library can remove it
-			res=copy_to_user(p->inc_pathname,inc_pathname,sizeof(char)*PATH_MAX);
+			res=copy_to_user(p->inc_path,inc_pathname,sizeof(char)*PATH_MAX);
 			kfree(inc_pathname);
 			if(res>0){
 				//this should not happen since we have already tried to copy into this struct at the beginning.
 				kfree(p);
-				return -EAGAIN
+				return -EAGAIN;
 			}
-			res=copy_to_user(param,p,sizeof(struct sess_params));
+			res=copy_to_user((struct sess_params*)param,p,sizeof(struct sess_params));
 			kfree(p);
 			if(res>0){
 				return -EAGAIN;
 			}
-			return res;
 			break;
 	}
+	return res;
 }
 
 /** Initializes the devices by setting sess_path, path_len and dev_ops variables, then registers the devices.
@@ -323,7 +323,7 @@ int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 int init_device(void){
 	int res;
 	//we initialize the read-write lock
-	rwlock_init(dev_lock);
+	rwlock_init(&dev_lock);
 	// allocate the path buffer and path_len
 	sess_path=kzalloc(PATH_MAX*sizeof(char),GFP_KERNEL);
 	strcpy(sess_path,DEFAULT_SESS_PATH);
@@ -364,7 +364,7 @@ int init_device(void){
 			return PTR_ERR(dev);
    }
 	printk("SessionFS driver registered successfully\n");
-	init_info(dev->kobj);
+	init_info(&(dev->kobj));
 	return 0;
 }
 
