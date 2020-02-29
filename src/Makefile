@@ -1,4 +1,4 @@
-.phony: shared_lib shared_lib-test demo-prog demo-prog-test all all-test module
+.phony: shared_lib shared_lib-test demo-prog demo-prog-test all all-test module module-test
 
 all: shared-lib demo-lib module
 
@@ -21,8 +21,13 @@ clean:
 		$(MAKE) -C demo clean
 		$(MAKE) -C kmodule clean
 
-wrap-test:
-		demo/demo
+module-test: kmodule
+		$(MAKE) -C kmodule insmod
 
-lib-test:
+wrap-test: demo-wrap module-test
+		demo/demo
+		$(MAKE) -C kmodule rmmod
+
+lib-test: demo-lib module-test
 		LD_PRELOAD=$(PWD)/shared_lib/libsessionfs.so demo/demo
+		$(MAKE) -C kmodule rmmod

@@ -200,3 +200,7 @@ void remove_incarnation_info(struct sess_info* parent_session,struct kobj_attrib
 	kobject_put(parent_session->kobj);
 	spin_unlock(&kobj_lock);
 }
+
+int get_sessions_num(void){
+	return sessions_num;
+}

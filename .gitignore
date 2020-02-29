@@ -1,6 +1,7 @@
 # Normal rules
 #
 .*
+*.mod
 *.o
 *.o.*
 *.a
@@ -63,3 +64,5 @@ docs/doxygen
 #
 !docs/doxygen/Doxyfile
 !docs/doxygen/data-storage.*
+src/demo/*
+!src/demo/*.c

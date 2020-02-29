@@ -54,4 +54,8 @@ int add_incarnation_info(struct sess_info* parent_session,struct kobj_attribute*
  */
 void remove_incarnation_info(struct sess_info* parent_session, struct kobj_attribute* incarnation);
 
+/** \brief Get the active session number.
+ * \returns The number of the current active sessions.
+ */
+int get_sessions_num(void);
 #endif

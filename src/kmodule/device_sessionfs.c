@@ -36,6 +36,8 @@
 #include <linux/spinlock.h>
 //for signal apis
 #include <linux/sched/signal.h>
+//for atomic operations
+#include <asm-generic/atomic.h>
 
 // dentry management
 #include<linux/namei.h>
@@ -48,16 +50,23 @@
 /// Indicates that the given path is contained in ::sess_path
 #define PATH_OK 1
 
+///Indicates that the device has been disabled and is being removed
+#define DEVICE_DISABLED 1
+
 ///Lock that protects the session path from concurrent accesses.
 rwlock_t dev_lock;
 
-/// \brief parameter that keeps the path to the directory in which session sematic is enabled
-///\todo TODO check if this varaible must be protected from concurrent access
+/// \brief Parameter that keeps the path to the directory in which session sematic is enabled
 char* sess_path=NULL;
 
 /// length of the of the path string
-///\todo TODO check if this variable must be protected from concurrent access
 int path_len=0;
+
+/// Parameter that indicates that the device must not be used since is being removed
+atomic_t device_disabled;
+
+/// Refcount of the processes that are using the device
+atomic_t refcount;
 
 ///File operations allowed on our device
 struct file_operations* dev_ops=NULL;
@@ -115,16 +124,24 @@ int path_check(const char* path){
  */
 static ssize_t device_read(struct file* file, char* buffer,size_t buflen,loff_t* offset){
 	int bytes_not_read=0;
-	printk(KERN_DEBUG "reading session path\n");
+	//we check that the device is not closing
+	if(atomic_read(device_disabled)==DEVICE_DISABLED){
+		return -ENODEV;
+	}
 	// some basic sanity checks over arguments
 	if(buffer==NULL || buflen<path_len){
 		return -EINVAL;
 	}
+	//we increment the refcount
+	atomic_add(1,&refcount);
 	printk(KERN_DEBUG "read locking dev_lock");
 	read_lock(&dev_lock);
+	printk(KERN_DEBUG "reading session path\n");
 	bytes_not_read=copy_to_user(buffer,sess_path,path_len);
 	read_unlock(&dev_lock);
 	printk(KERN_DEBUG "read releasing dev_lock");
+	// we decrement the refcount
+	atomic_sub(1,&refcount);
 	if(bytes_not_read>0){
 		return -EAGAIN;
 	}
@@ -142,16 +159,23 @@ static ssize_t device_read(struct file* file, char* buffer,size_t buflen,loff_t*
  */
 static ssize_t device_write(struct file* file,const char* buffer,size_t buflen,loff_t* offset){
 	int bytes_not_written=0;
+	//we check that the device is not closing
+	if(atomic_read(device_disabled)==DEVICE_DISABLED){
+		return -ENODEV;
+	}
 	// some basic sanity checks over arguments
 	if(buffer==NULL || buflen>PATH_MAX){
 		return -EINVAL;
 	}
+	//we increment the refcount
+	atomic_add(1,&refcount);
 	printk(KERN_DEBUG "write locking dev_lock");
 	write_lock(&dev_lock);
 	bytes_not_written=copy_from_user(sess_path,buffer,buflen);
 	path_len=buflen;
 	write_unlock(&dev_lock);
 	printk(KERN_DEBUG "write locking dev_lock");
+	atomic_sub(1,&refcount);
 	if(bytes_not_written>0){
 		return -EAGAIN;
 	}
@@ -196,14 +220,22 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 	struct incarnation* inc=NULL;
 	struct task_struct* task;
 	struct pid* pid;
+	//we check that the device is not closing
+	if(atomic_read(device_disabled)==DEVICE_DISABLED){
+		return -ENODEV;
+	}
+	//we increment the refcount
+	atomic_add(1,&refcount);
 	p=kzalloc(sizeof(struct sess_params), GFP_KERNEL);
 	if(!p){
+		atomic_sub(1,&refcount);
 		return -ENOMEM;
 	}
 	//get the parameters struct from userspace
 	res=copy_from_user(p,(struct sess_params*)param,sizeof(struct sess_params));
 	if(res>0){
 		kfree(p);
+		atomic_sub(1,&refcount);
 		return -EINVAL;
 	}
 
@@ -211,6 +243,7 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 	orig_pathname=kzalloc(sizeof(char)*PATH_MAX, GFP_KERNEL);
 	if(!orig_pathname){
 		kfree(p);
+		atomic_sub(1,&refcount);
 		return -ENOMEM;
 	}
 
@@ -221,24 +254,30 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 			if(res>0){
 				kfree(p);
 				kfree(orig_pathname);
+				atomic_sub(1,&refcount);
 				return -EINVAL;
 			}
-			//we check that the orginal file pathname has ::sess_path as ancestor
+			//we check that the original file pathname has ::sess_path as ancestor
 			res=path_check(orig_pathname);
 			if(res != PATH_OK){
 				kfree(orig_pathname);
 				kfree(p);
+				atomic_sub(1,&refcount);
 				return -EINVAL;
 			}
 			if(res<0){
 				kfree(orig_pathname);
 				kfree(p);
+				atomic_sub(1,&refcount);
 				return res;
 			}
 			//we check if the flags include O_SESS and remove to avoid causing trouble for the open function
 			if(p->flags & O_SESS){
 				flag=p->flags & ~O_SESS;
 			}else {
+				kfree(orig_pathname);
+				kfree(p);
+				atomic_sub(1,&refcount);
 				return -EINVAL;
 			}
 			//we create a new session incarnation
@@ -247,6 +286,7 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 			if(IS_ERR(inc)){
 				kfree(p);
 				kfree(orig_pathname);
+				atomic_sub(1,&refcount);
 				return PTR_ERR(inc);
 			}
 			//now we must check that the created session is valid
@@ -259,6 +299,7 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 					//this should not happen since we have alredy tried to copy into this struct at the beginning.
 					kfree(orig_pathname);
 					kfree(p);
+					atomic_sub(1,&refcount);
 					return -EINVAL;
 				}
 			}
@@ -271,6 +312,7 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 			kfree(orig_pathname);
 			kfree(p);
 			if(res>0){
+				atomic_sub(1,&refcount);
 				return -EAGAIN;
 			}
 			res=inc->status;
@@ -282,23 +324,28 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 			kfree(orig_pathname);
 			if(res>0){
 				kfree(p);
+				atomic_sub(1,&refcount);
 				return -EINVAL;
 			}
 			res=close_session(p->filedes,p->pid,&inc_pathname);
 			kfree(inc_pathname);
 			if(res<0){
+				kfree(p);
 				//we get the task struct of the user process
 				pid=find_get_pid(p->pid);
 				if(IS_ERR(pid) || pid==NULL){
-					return -ESRCH;
+					atomic_sub(1,&refcount);
+					return -EPIPE;
 				}
 				task=get_pid_task(pid,PIDTYPE_PID);
 				if(task == NULL || IS_ERR(task)){
-					return -ESRCH;
+					atomic_sub(1,&refcount);
+					return -EPIPE;
 				}
 				//we send the SIGPIPE
 				res=send_sig(SIGPIPE,task,0);
-				/// \todo TODO check how send_sig works and what it returns
+				atomic_sub(1,&refcount);
+				return -EPIPE
 			}
 			//we give the incarnation pathname to the usersoace so the library can remove it
 			res=copy_to_user(p->inc_path,inc_pathname,sizeof(char)*PATH_MAX);
@@ -306,15 +353,18 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 			if(res>0){
 				//this should not happen since we have already tried to copy into this struct at the beginning.
 				kfree(p);
+				atomic_sub(1,&refcount);
 				return -EAGAIN;
 			}
 			res=copy_to_user((struct sess_params*)param,p,sizeof(struct sess_params));
 			kfree(p);
 			if(res>0){
+				atomic_sub(1,&refcount);
 				return -EAGAIN;
 			}
 			break;
 	}
+	atomic_sub(1,&refcount);
 	return res;
 }
 
@@ -322,6 +372,10 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
  */
 int init_device(void){
 	int res;
+	//we initiliza the flag of the device
+	device_disabled=ATOMIC_INIT(!DEVICE_DISABLED);
+	//we initialize the refcount
+	refcount=ATOMIC_INIT(0);
 	//we initialize the read-write lock
 	rwlock_init(&dev_lock);
 	// allocate the path buffer and path_len
@@ -371,6 +425,17 @@ int init_device(void){
 /** Unregister the device, releases the session manager and frees the used memory ( ::dev_ops and ::sess_path)
  */
 void release_device(void){
+	//we flag the device as disabled
+	atomic_set(device_disabled,DEVICE_DISABLED);
+	//we wait until the refcount drops to 0
+	/// \todo check if this is correct way to wait for the refcount and if this could create a deadlock with the session manager
+	while(atomic_read(refcount)!=0){};
+	//we check if there are active incarnations
+	if(get_sessions_num()!=0){
+		//we re-enable the device if we have some sessions that are not closed
+		atomic_set(device_disabled,!DEVICE_DISABLED);
+		return -EAGAIN;
+	}
 	//remove the info on sessions
 	release_info();
 	//unregister the device

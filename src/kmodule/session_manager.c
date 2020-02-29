@@ -478,19 +478,24 @@ void release_manager(void){
 	struct llist_node* llist_node=NULL;
 	struct list_head* session_it=NULL;
 	//we take the spinlock to be sure to be the last to have accessed this list
+	printk(KERN_DEBUG "releasing manager, grabbing the global spinlock");
 	spin_lock(&sessions_lock);
 	session_it=sessions.next;
 	/// \todo TODO check if we need to be protected against concurrent rcu reads
-	while(session_it != NULL){
+	while(!list_empty(&sessions)){
+	printk(KERN_DEBUG "iterator element: %p",session_it);
 		session=list_entry(session_it,struct session,list_node);
 		session_it=session_it->next;
+		printk(KERN_DEBUG "we have elements in the rcu list, removing %p",session);
 		//we eliminate the remaining sessions incarnations
-		if(session != NULL && session->incarnations.first != NULL){
+		if(!llist_empty(&(session->incarnations)) && session->incarnations.first != NULL){
+			printk(KERN_DEBUG "checking for active incarantions");
 			//we take the write lock to be sure to be the last to have accessed the incarnation list
 			write_lock(&session->sess_lock);
 			llist_node=session->incarnations.first;
 			while(llist_node != NULL){
 				incarnation=llist_entry(llist_node,struct incarnation,next);
+				printk(KERN_DEBUG "removing %s",incarnation->pathname);
 				llist_node=llist_node->next;
 				/// \todo TODO remove the incarnation file descriptor
 				filp_close(incarnation->file,NULL);
@@ -499,6 +504,7 @@ void release_manager(void){
 			}
 			write_unlock(&(session->sess_lock));
 		}
+		printk(KERN_DEBUG "removing the %s session",session->pathname);
 		delete_session(&(session->rcu_head));
 	}
 	INIT_LIST_HEAD(&sessions);

@@ -74,7 +74,11 @@ int close(int __fd){
 	}
 	printf("calling kernel module to remove the session\n");
 	//we remove the incarnation
-	res=ioctl(dev,IOCTL_SEQ_CLOSE,params);
+	//we retry if we receive ENODEV, since the module will notice that there is a valid session to be closed
+	res=-ENODEV;
+	while(res==-ENODEV){
+		res=ioctl(dev,IOCTL_SEQ_CLOSE,params);
+	}
 	if(res<0){
 		free(inc_path);
 		free(params);
