@@ -36,8 +36,6 @@
 #include <linux/spinlock.h>
 //for signal apis
 #include <linux/sched/signal.h>
-//for atomic operations
-#include <asm-generic/atomic.h>
 
 // dentry management
 #include<linux/namei.h>
@@ -62,7 +60,7 @@ char* sess_path=NULL;
 /// length of the of the path string
 int path_len=0;
 
-/// Parameter that indicates that the device must not be used since is being removed
+/// Parameter that indicates that the device must not be used since is being removed \todo check if this really needs to be an atomic_t.
 atomic_t device_disabled;
 
 /// Refcount of the processes that are using the device
@@ -125,7 +123,7 @@ int path_check(const char* path){
 static ssize_t device_read(struct file* file, char* buffer,size_t buflen,loff_t* offset){
 	int bytes_not_read=0;
 	//we check that the device is not closing
-	if(atomic_read(device_disabled)==DEVICE_DISABLED){
+	if(atomic_read(&device_disabled)==DEVICE_DISABLED){
 		return -ENODEV;
 	}
 	// some basic sanity checks over arguments
@@ -160,7 +158,7 @@ static ssize_t device_read(struct file* file, char* buffer,size_t buflen,loff_t*
 static ssize_t device_write(struct file* file,const char* buffer,size_t buflen,loff_t* offset){
 	int bytes_not_written=0;
 	//we check that the device is not closing
-	if(atomic_read(device_disabled)==DEVICE_DISABLED){
+	if(atomic_read(&device_disabled)==DEVICE_DISABLED){
 		return -ENODEV;
 	}
 	// some basic sanity checks over arguments
@@ -221,7 +219,7 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 	struct task_struct* task;
 	struct pid* pid;
 	//we check that the device is not closing
-	if(atomic_read(device_disabled)==DEVICE_DISABLED){
+	if(atomic_read(&device_disabled)==DEVICE_DISABLED){
 		return -ENODEV;
 	}
 	//we increment the refcount
@@ -345,7 +343,7 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 				//we send the SIGPIPE
 				res=send_sig(SIGPIPE,task,0);
 				atomic_sub(1,&refcount);
-				return -EPIPE
+				return -EPIPE;
 			}
 			//we give the incarnation pathname to the usersoace so the library can remove it
 			res=copy_to_user(p->inc_path,inc_pathname,sizeof(char)*PATH_MAX);
@@ -373,9 +371,9 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 int init_device(void){
 	int res;
 	//we initiliza the flag of the device
-	device_disabled=ATOMIC_INIT(!DEVICE_DISABLED);
+	atomic_set(&device_disabled,!DEVICE_DISABLED);
 	//we initialize the refcount
-	refcount=ATOMIC_INIT(0);
+	atomic_set(&refcount,0);
 	//we initialize the read-write lock
 	rwlock_init(&dev_lock);
 	// allocate the path buffer and path_len
@@ -424,16 +422,16 @@ int init_device(void){
 
 /** Unregister the device, releases the session manager and frees the used memory ( ::dev_ops and ::sess_path)
  */
-void release_device(void){
+int release_device(void){
 	//we flag the device as disabled
-	atomic_set(device_disabled,DEVICE_DISABLED);
+	atomic_set(&device_disabled,DEVICE_DISABLED);
 	//we wait until the refcount drops to 0
 	/// \todo check if this is correct way to wait for the refcount and if this could create a deadlock with the session manager
-	while(atomic_read(refcount)!=0){};
+	while(atomic_read(&refcount)!=0){};
 	//we check if there are active incarnations
 	if(get_sessions_num()!=0){
 		//we re-enable the device if we have some sessions that are not closed
-		atomic_set(device_disabled,!DEVICE_DISABLED);
+		atomic_set(&device_disabled,!DEVICE_DISABLED);
 		return -EAGAIN;
 	}
 	//remove the info on sessions
@@ -447,4 +445,5 @@ void release_device(void){
 	release_manager();
 	kfree(sess_path);
 	kfree(dev_ops);
+	return 0;
 }
