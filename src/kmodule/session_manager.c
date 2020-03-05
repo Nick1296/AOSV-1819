@@ -76,7 +76,7 @@ struct list_head sessions;
 spinlock_t sessions_lock;
 
 /** \brief Opens a file from kernel space.
- * \param[in] pathanme String that represents the file location and name **must be in kernel memory**
+ * \param[in] pathname String that represents the file location and name **must be in kernel memory**
  * \param[in] flags Flags that will regulate the permissions on the file.
  * \param[in] fd_needed If set to ::NO_FD the file descriptor for the openend file will not be designated (used only when we are opening original files).
  * \param[out] file pointer to the file struct of the opened file.
@@ -89,11 +89,13 @@ spinlock_t sessions_lock;
 int open_file(const char* pathname, int flags,int fd_needed, struct file** file){
 	struct file* f=NULL;
 	int fd;
+	printk(KERN_DEBUG "session_manager: opening (and creating if needed) the orginal file: %s",pathname);
 	//we try to open the file
 	f=filp_open(pathname,flags,DEFAULT_PERM);
 	if (IS_ERR(f)) {
 		fd = PTR_ERR(f);
 	} else {
+		printk(KERN_DEBUG "session_manager: file opened successfully");
 		if(fd_needed){
 			//find a new file descriptor
 			fd=get_unused_fd_flags(flags);
@@ -102,6 +104,7 @@ int open_file(const char* pathname, int flags,int fd_needed, struct file** file)
 				fsnotify_open(f);
 				//register the descriptor in the intermediate table
 				fd_install(fd, f);
+				printk(KERN_DEBUG "session_manager: associated file with file descriptor: %d",fd);
 			}
 		} else {
 			fd=NO_FD;
@@ -110,6 +113,7 @@ int open_file(const char* pathname, int flags,int fd_needed, struct file** file)
 	*file=f;
 	return fd;
 }
+
 /** \brief Searches for a session with a given pathname.
  * \param pathname The pathname that identifies the session.
  * \param filedes The file descriptor of an incarnation.
@@ -133,12 +137,14 @@ struct session* search_session(const char* pathname,int filedes, pid_t pid){
 	//we need to walk all the list to see if we have alredy other sessions opened for the same pathname
 	list_for_each_entry_rcu(session_it,&sessions,list_node,NULL){
 		if(session_it != NULL && strcmp(session_it->session->pathname,pathname) == 0){
+			printk(KERN_DEBUG "session_manager: found session by pathname");
 			found=session_it->session;
 			rcu_read_unlock();
 			if(filedes != NO_FD){
 				/// \todo verify if we can traverse the llist without removing all the entries and without taking the read lock
 				llist_for_each_entry_safe(inc_it,inc_tmp,found->incarnations.first,next){
 					if(inc_it->owner_pid==pid && inc_it->filedes==filedes){
+						printk(KERN_DEBUG "session_manager: found session by incarnation pid and file descriptor");
 						return found;
 					}
 				}
@@ -172,9 +178,11 @@ struct session* init_session(const char* pathname,int flags){
 	struct session_rcu* node_rcu;
 	//we get the spinlock to avoid race conditions while creating the session object
 	spin_lock(&sessions_lock);
+	printk(KERN_DEBUG "session_manager: checking for an already existing session with the same pathname: %s",pathname);
 	//we check if, while we were searching, the session has been already created
 	node=search_session(pathname,NO_FD,NO_FD);
 	if(node!=NULL){
+		printk(KERN_DEBUG "session_manager: found an already existing session");
 		//we return the found session;
 		spin_unlock(&sessions_lock);
 		return node;
@@ -192,8 +200,6 @@ struct session* init_session(const char* pathname,int flags){
 		kfree(node_rcu);
 		return ERR_PTR(-ENOMEM);
 	}
-	//we link the session_rcu and the session structs
-	node_rcu->session=node;
 	//we allocate memory for the original file pathname
 	node->pathname=kzalloc(sizeof(char)*PATH_MAX, GFP_KERNEL);
 	if(!node->pathname){
@@ -202,6 +208,7 @@ struct session* init_session(const char* pathname,int flags){
 		kfree(node_rcu);
 		return ERR_PTR(-ENOMEM);
 	}
+	printk(KERN_DEBUG "session_manager: successfully allocated necessary memory");
 	//we need to open the original file always with both read and write permissions.
 	flag=(((flags & ~O_RDONLY) & ~O_WRONLY) | O_RDWR);
 	fd=open_file(pathname,flag,NO_FD,&file);
@@ -212,6 +219,9 @@ struct session* init_session(const char* pathname,int flags){
 		kfree(node_rcu);
 		return ERR_PTR(fd);
 	}
+	printk(KERN_DEBUG "session_manager: original file opened successfully, populating session object");
+	//we link the session_rcu and the session structs
+	node_rcu->session=node;
 	//we fill the session object
 	INIT_LIST_HEAD(&(node_rcu->list_node));
 	node->file=file;
@@ -231,12 +241,14 @@ struct session* init_session(const char* pathname,int flags){
 		kfree(node_rcu);
 		return ERR_PTR(res);
 	}
+	printk(KERN_DEBUG "session_manager: adding session object to the rculist");
 	// we insert the new session in the rcu list
 	list_add_rcu(&(node_rcu->list_node),&sessions);
 	//we release the spinlock
 	spin_unlock(&sessions_lock);
 	return node;
 }
+
 /** \brief Deallocates the given session object.
  * \param[in] session The session object to deallocate.
  * This function is used, to free the memory used by the session when nobody is accessing it, this is checked sing the session::refcount member.
@@ -246,9 +258,12 @@ struct session* init_session(const char* pathname,int flags){
  */
 int delete_session(struct session* session){
 	//before deleting the session we grab the write lock to make sure that we don't deallocate the session while someone is reading it.
+	printk(KERN_DEBUG "session_manager: checking if no one is using the session object");
 	if(atomic_read(&(session->refcount))>0){
+		printk(KERN_INFO "session_manager: session object in use, aborting elimination");
 		return -EAGAIN;
 	}
+	printk(KERN_INFO "session_manager: session object not in use, proceeding with elimination");
 	write_lock(&(session->sess_lock));
 	remove_session_info(&(session->info));
 	filp_close(session->file,NULL);
@@ -267,6 +282,7 @@ int delete_session(struct session* session){
  */
 void delete_session_rcu(struct rcu_head* head){
 	struct session_rcu* session_rcu=container_of(head,struct session_rcu,rcu_head);
+	printk(KERN_DEBUG "session_manager: deleting unsued session_rcu");
 	kfree(session_rcu);
 }
 
@@ -280,6 +296,10 @@ int copy_file(struct file* src,struct file* dst){
 	int read=1,written=1;
 	//bytes read, set initially to 1 to make the while start for the first time
 	char* data=kzalloc(512*sizeof(char), GFP_USER);
+	if(!data){
+		return -ENOMEM;
+	}
+	printk(KERN_DEBUG "session_manager: starting file copy");
 	//we read the file until the read function will not read any more bytes
 	while(read>0){
 		read=kernel_read(src,data,DATA_DIM,&offset);
@@ -295,6 +315,7 @@ int copy_file(struct file* src,struct file* dst){
 		offset+=written;
 	}
 	kfree(data);
+	printk(KERN_DEBUG "session_manager: file copy completed successfully");
 	return 0;
 }
 
@@ -315,26 +336,15 @@ struct incarnation* create_incarnation(struct session* session, int flags, pid_t
 	struct file* file=NULL;
 	int fd=NO_FD;
 	char *pathname=NULL;
+	/* we get the read lock since we do not need to protect the lockless list when adding elements, but the session
+	* incarnations must be created atomically in respect to close operations on the same original file
+	*/
+	read_lock(&(session->sess_lock));
 	//we create the pathname for the incarnation
 	pathname=kzalloc(PATH_MAX*sizeof(char),GFP_KERNEL);
 	if(!pathname){
 		read_unlock(&(session->sess_lock));
 		return ERR_PTR(-ENOMEM);
-	}
-	/* we get the read lock since we do not need to protect the lockless list when adding elements, but the session
-	* incarnations must be created atomically in respect to close operations on the same original file
-	*/
-	read_lock(&(session->sess_lock));
-	//if the current session has been detached and it will be freed shortly we abort the incarnation creation
-	if(session->valid!=VALID_NODE){
-		read_unlock(&(session->sess_lock));
-		return NULL;
-	}
-	//we use the actual timestamp so we are resistant to multiple opening of the same session by the same process
-	res=snprintf(pathname,PATH_MAX,"%s_%d_%lld_incarnation",session->pathname,pid,ktime_get_real());
-	if(res>=PATH_MAX){
-		//we make the file shorter by opening it on /var/tmp
-		snprintf(pathname,PATH_MAX,"/var/tmp/%d_%lld",pid,ktime_get_real());
 	}
 	//we create the incarnation object
 	incarnation=kmalloc(sizeof(struct incarnation), GFP_KERNEL);
@@ -342,6 +352,21 @@ struct incarnation* create_incarnation(struct session* session, int flags, pid_t
 		read_unlock(&(session->sess_lock));
 		kfree(pathname);
 		return ERR_PTR(-ENOMEM);
+	}
+	//if the current session has been detached and it will be freed shortly we abort the incarnation creation
+	if(session->valid!=VALID_NODE){
+		printk(KERN_INFO "session_manager: the parent session is invalid, aborting incarnation creation")
+		read_unlock(&(session->sess_lock));
+		kfree(pathname);
+		kfree(incarnation);
+		return NULL;
+	}
+	printk(KERN_DEBUG "session_manager: allocated necessary memory");
+	//we use the actual timestamp so we are resistant to multiple opening of the same session by the same process
+	res=snprintf(pathname,PATH_MAX,"%s_%d_%lld_incarnation",session->pathname,pid,ktime_get_real());
+	if(res>=PATH_MAX){
+		//we make the file shorter by opening it on /var/tmp
+		snprintf(pathname,PATH_MAX,"/var/tmp/%d_%lld",pid,ktime_get_real());
 	}
 	//we add the information on the new incarnation
 	res=add_incarnation_info(&(session->info),&(incarnation->inc_attr),pid);
@@ -352,6 +377,7 @@ struct incarnation* create_incarnation(struct session* session, int flags, pid_t
 		kfree(incarnation);
 		return ERR_PTR(res);
 	}
+	printk(KERN_DEBUG "session_manager: opening the incarnation file: %s",pathname);
 	//we try to open the file
 	fd=open_file(pathname,flags | O_CREAT,!NO_FD,&file);
 	if(fd<0){
@@ -360,6 +386,7 @@ struct incarnation* create_incarnation(struct session* session, int flags, pid_t
 		kfree(incarnation);
 		return ERR_PTR(fd);
 	}
+	printk(KERN_DEBUG "session_manager: copying the original file over the incarantion and populating the incarantion object");
 	//we copy the original file in the new incarnation
 	res=copy_file(session->file,file);
 	// we save the copy result in the status member of the struct
@@ -370,6 +397,7 @@ struct incarnation* create_incarnation(struct session* session, int flags, pid_t
 	/// \todo see if we need to save flags for each incarnation
 	//incarnation->flags=flags;
 	incarnation->owner_pid=pid;
+	printk(KERN_DEBUG "session_manager: adding the incarnation to the llist");
 	//we add the incarnation to the list of active incarnations
 	llist_add(&(incarnation->next),&(session->incarnations));
 	//we release the read lock
@@ -395,6 +423,7 @@ int delete_incarnation(struct session* session,int filedes, pid_t pid,int overwr
 	struct llist_node *it=NULL, *first=NULL;
 	struct incarnation* incarnation=NULL;
 	first=session->incarnations.first;
+	printk(KERN_DEBUG "session_manager: searching for the incarnation to delete");
 	//we search for the previous incarnation
 	//if our incarnation the first in the list?
 	incarnation=llist_entry(first,struct incarnation,next);
@@ -402,13 +431,16 @@ int delete_incarnation(struct session* session,int filedes, pid_t pid,int overwr
 		incarnation=llist_entry(it->next, struct incarnation, next);
 		session->incarnations.first=&(incarnation->next);
 		isfirst=1;
+		printk(KERN_DEBUG "session_manager: the incarnation to delete is the first in the llist");
 	}
 	if(!isfirst){
+		printk(KERN_DEBUG "session_manager: navigating the llist to find the incarnation to delete");
 		llist_for_each(it,first){
 			if(it->next!=NULL){
 				//we check if the next element on the list if the incarnation we must find
 				incarnation=llist_entry(it->next, struct incarnation, next);
 				if(incarnation->owner_pid==pid && incarnation->filedes==filedes){
+					printk(KERN_DEBUG "session_manager: found the incarnation in the list")
 					//we eliminate ourselves from the list
 					it->next=&(incarnation->next);
 					break;
@@ -420,6 +452,7 @@ int delete_incarnation(struct session* session,int filedes, pid_t pid,int overwr
 	remove_incarnation_info(&(session->info),&(incarnation->inc_attr));
 	/// \todo TODO: check if the overwrite param is really necessary
 	if(overwrite==OVERWRITE_ORIG && incarnation->status == VALID_NODE){
+		printk(KERN_DEBUG "session_manager: copying the content of the incarnation over the original file");
 		//before freeing the memory we copy the content of the current incarnation in the original file
 		res=copy_file(incarnation->file,session->file);
 		if(res<0){
@@ -429,6 +462,7 @@ int delete_incarnation(struct session* session,int filedes, pid_t pid,int overwr
 	*pathname=incarnation->pathname;
 	//we don't free the memory for the struct file and the pathname since we will leave to the library the task to close the file descriptor and remove the file
 	kfree(incarnation);
+	printk(KERN_DEBUG "session_manager: incarnation closed successfully");
 	return 0;
 }
 
@@ -450,9 +484,11 @@ struct incarnation* create_session(const char* pathname, int flags, pid_t pid){
 	//we get the first element of the session list
 	struct session* session=NULL;
 	struct incarnation* incarnation=NULL;
+	printk(KERN_DEBUG "session_manager: searching for an existing session with pathname %s",pathname);
 	session=search_session(pathname,NO_FD,NO_FD);
 	//session_it now is either null or contains the element which represents the session for the file in pathname
 	if(session==NULL || session->valid!=VALID_NODE){
+		printk(KERN_DEBUG "session_manager: session object not found, creating a new session with pathname %s",pathname);
 	//we create the session object if necessary
 		session=init_session(pathname, flags);
 		if(IS_ERR(session)){
@@ -464,11 +500,13 @@ struct incarnation* create_session(const char* pathname, int flags, pid_t pid){
 		//we increment the refcount
 		atomic_add(1,&(session->refcount));
 		//we create the file incarnation
+		printk(KERN_DEBUG "session_manager: adding a new incarnation to session object %s",pathname);
 		incarnation=create_incarnation(session,flags,pid);
 		atomic_sub(1,&(session->refcount));
 	} else{
 		incarnation=ERR_PTR(-EAGAIN);
 	}
+	printk(KERN_DEBUG "session_manager: incarantion created successfully");
 	return incarnation;
 }
 
@@ -482,6 +520,7 @@ int  close_session(int fdes, pid_t pid, const char** incarnation_pathname){
 	int res=0;
 	struct session* session=NULL;
 	struct session_rcu* session_rcu=NULL;
+	printk(KERN_DEBUG "session_manager: searching for a session with an incarantion with %d pid and %d file descriptor", pid, fdes);
 	session=search_session(NULL,fdes,pid);
 	if(session==NULL){
 		return -EBADF;
@@ -492,6 +531,7 @@ int  close_session(int fdes, pid_t pid, const char** incarnation_pathname){
 	write_lock(&session->sess_lock);
 	//we check if the session if still valid
 	if(session->valid!=VALID_NODE){
+		printk(KERN_DEBUG "session_manager: invalid session, aborting");
 		return -EBADF;
 	}
 	//we eliminate the incarnation and we overwrite the original file with the incarnation content.
@@ -500,28 +540,31 @@ int  close_session(int fdes, pid_t pid, const char** incarnation_pathname){
 	if(res<0){
 		return res;
 	}
+	printk(KERN_DEBUG "session_manager: elimination of the incarnation successful");
+	/// \todo check if the following semantic for session deletion is correct
+	//we get the spinlock over the session list, to avoid running concurrently with another list modification primitive
+	spin_lock(&sessions_lock);
 	//we check if the list of incarnations is empty
 	if(llist_empty(&(session->incarnations))){
-		//we try to delete the session item
-		res=delete_session(session);
-		//if someone was using it (refcount >1 ) the function will have returned -EAGAIN so we stop here
-		if(res==-EAGAIN){
-			return 0;
-		}
+		printk(KERN_DEBUG "session_manager: detected empty llist for the associated session, attempting to purge the session object");
+		//we flag the current session as invalid, to avoid having new incarnations created in here
+		session->valid=!VALID_NODE;
 		session_rcu=container_of(&session,struct session_rcu, session);
-		//we get the spinlock over the session list, to avoid runing concurrently with another list modification primitive
-		spin_lock(&sessions_lock);
 		//we can remove the current session object from the rcu list
 		list_del_rcu(&(session_rcu->list_node));
 		//we register a callback to free the memory associated to the session
 		call_rcu(&(session_rcu->rcu_head),delete_session_rcu);
+		//we try to delete the session item
+		res=delete_session(session);
+		//if someone was using it (refcount >1 ) the function will have returned -EAGAIN so we stop here
+		if(res==-EAGAIN){
+			printk(KERN_DEBUG "session_manager: session object in use, aborted deallocation");
+		} else {
+			printk(KERN_DEBUG "session_manager: session object deallocated");
+		}
+	}
 		//we release the spinlock
 		spin_unlock(&sessions_lock);
-	}
-	if(res<0){
-		//we report that the original file is now invalid, since we have failed in the copy
-		return res;
-	}
 	return 0;
 }
 
@@ -539,24 +582,23 @@ void release_manager(void){
 	struct llist_node* llist_node=NULL;
 	struct list_head* session_it=NULL;
 	//we take the spinlock to be sure to be the last to have accessed this list
-	printk(KERN_DEBUG "releasing manager, grabbing the global spinlock");
+	printk(KERN_DEBUG "session_manager: releasing the manager, grabbing the global spinlock");
 	spin_lock(&sessions_lock);
 	session_it=sessions.next;
-	/// \todo TODO check if we need to be protected against concurrent rcu reads
 	while(!list_empty(&sessions)){
-	printk(KERN_DEBUG "iterator element: %p",session_it);
+	printk(KERN_DEBUG "session_manager: iterator element: %p",session_it);
 		session_rcu=list_entry(session_it,struct session_rcu,list_node);
 		session_it=session_it->next;
-		printk(KERN_DEBUG "we have elements in the rcu list, removing %p",session_rcu->session);
+		printk(KERN_DEBUG "session_manager: we have elements in the rcu list, removing %p",session_rcu->session);
 		//we eliminate the remaining sessions incarnations
 		if(!llist_empty(&(session_rcu->session->incarnations)) && session_rcu->session->incarnations.first != NULL){
-			printk(KERN_DEBUG "checking for active incarantions");
+			printk(KERN_DEBUG "session_manager: checking for active incarantions");
 			//we take the write lock to be sure to be the last to have accessed the incarnation list
 			write_lock(&session_rcu->session->sess_lock);
 			llist_node=session_rcu->session->incarnations.first;
 			while(llist_node != NULL){
 				incarnation=llist_entry(llist_node,struct incarnation,next);
-				printk(KERN_DEBUG "removing %s",incarnation->pathname);
+				printk(KERN_DEBUG "session_manager: removing %s",incarnation->pathname);
 				llist_node=llist_node->next;
 				filp_close(incarnation->file,NULL);
 				kfree(incarnation->pathname);
@@ -564,7 +606,7 @@ void release_manager(void){
 			}
 			write_unlock(&(session_rcu->session->sess_lock));
 		}
-		printk(KERN_DEBUG "removing the %s session",session_rcu->session->pathname);
+		printk(KERN_DEBUG "session_manager: removing the %s session",session_rcu->session->pathname);
 		delete_session(session_rcu->session);
 		kfree(session_rcu);
 	}

@@ -46,7 +46,7 @@ static __attribute__((constructor)) void init_method(void){
  * \brief Wraps the close determining if it must call the libc `close` or the SessionFS module.
  * \param[in] filedes file descriptor to deallocate, same as libc `open`'s `fildes`.
  * \returns 0 on success, -1 on error, setting errno to indicate the error value.
- * \todo see if is beeter to locate the incarnation filename from the library (by reading from `/proc/self/fd/filedes`)
+ * \todo see if is better to locate the incarnation filename from the library (by reading from `/proc/self/fd/filedes`)
  */
 int close(int __fd){
 	int res;
@@ -54,12 +54,15 @@ int close(int __fd){
 	struct sess_params* params=malloc(sizeof(struct sess_params));
 	memset(params,0,sizeof(struct sess_params));
 	if(params==NULL){
-		return -ENOMEM;
+		errno=ENOMEM;
+		return -1;
 	}
 	char* inc_path=malloc(sizeof(char)*PATH_MAX);
 	memset(inc_path,0,sizeof(char)*PATH_MAX);
 	if(inc_path==NULL){
-		return -ENOMEM;
+		free(params);
+		errno = ENOMEM;
+		return -1;
 	}
 	params->orig_path=NULL;
 	params->filedes=__fd;
@@ -68,32 +71,40 @@ int close(int __fd){
 	memset(inc_path,0,PATH_MAX);
 	//we open the device
 	int dev;
+	printf("libsessionfs: opening char device");
 	dev=orig_open(DEV_PATH,O_WRONLY);
 	if(dev<0){
+		free(params);
+		free(inc_path);
 		return dev;
 	}
-	printf("calling kernel module to remove the session\n");
+	printf("libsessionfs: calling kernel module to remove the session\n");
 	//we remove the incarnation
 	//we retry if we receive ENODEV, since the module will notice that there is a valid session to be closed
 	res=-ENODEV;
+	/// \todo check is there is a smarte way that spamming ioctls
 	while(res==-ENODEV){
 		res=ioctl(dev,IOCTL_SEQ_CLOSE,params);
 	}
 	if(res<0){
+		orig_close(dev);
 		free(inc_path);
 		free(params);
-		return res;
+		errno=-res;
+		return -1;
 	}
-	printf("calling libc close to remove the file descriptor\n");
+	printf("libsessionfs: calling libc close to remove the file descriptor\n");
 	//we call libc close
 	res=orig_close(__fd);
 	if(res<0){
+		orig_close(dev);
 		free(inc_path);
 		free(params);
 		return res;
 	}
-	printf("calling removing the incarnation file\n");
+	printf("libsessionfs: removing the incarnation file\n");
 	//we delete the incarnation
+	orig_close(dev);
 	res=remove(inc_path);
 	free(inc_path);
 	free(params);
@@ -113,52 +124,57 @@ int open(const char* __file, int __oflag, ...){
 	int flag=0, res=0,dev;
 	//we get the session path from the device
 	char *sess_path=malloc(sizeof(char)*PATH_MAX),*path=NULL;
-	printf("reading the current session path\n");
+	printf("libsessionfs: reading the current session path\n");
 	res=get_sess_path(sess_path,PATH_MAX);
 	if(res<0){
 		return res;
 	}
-	printf("current session path:%s \n given pathname:%s\n", sess_path,__file);
+	printf("libsessionfs: current session path:%s \n given pathname:%s\n", sess_path,__file);
 	//we check if the file is in the right path
 	path=strstr(__file,sess_path);
 	free(sess_path);
 	// check for the presence of the O_SESS flag
 	flag=__oflag & O_SESS;
 	if(flag==4 && path!=NULL){
-		printf("detected O_SESS flag and correct path\n");
+		printf("libsessionfs: detected O_SESS flag and correct path\n");
 		//we open the device
 		dev=orig_open(DEV_PATH,O_WRONLY);
 		if(dev<0){
 			return dev;
 		}
+		printf("libsessionfs: allocating and filling a sess_params struct\n");
 		//we prepare an instance of the sess_params struct
 		struct sess_params* params=malloc(sizeof(struct sess_params));
 		memset(params,0,sizeof(struct sess_params));
 		if(params==NULL){
+			errno=ENOMEM;
+			orig_close(dev);
 			return -1;
-			/// \todo set errno to ENOMEM
 		}
 		params->orig_path=__file;
 		params->flags=__oflag;
 		params->pid=getpid();
 		params->inc_path=NULL;
-		printf("calling kernel module to create a new incarnation\n");
+		printf("libsessionfs: calling kernel module to create a new incarnation\n");
 		res=ioctl(dev,IOCTL_SEQ_OPEN,params);
 		if(res<0){
+			orig_close(dev);
 			free(params);
-			return res;
+			errno=-res;
+			return -1;
 		}
 		//we check if the created session is valid
-		if(params->valid < VALID_SESS){
-			printf("session invalid: closing\n");
+		if(params->valid != VALID_SESS){
+			printf("libsessionfs: session invalid: closing\n");
 			//if is invalid we need to call our close
 			close(params->filedes);
 		}
 		res=params->filedes;
 		free(params);
-		return res;
+		errno=EAGAIN;
+		return -1;
 	} else {
-		printf("calling libc open\n");
+		printf("libsessionfs: calling libc open\n");
 		return orig_open(__file, __oflag);
 	}
 }
@@ -173,6 +189,10 @@ int get_sess_path(char* buf,int bufsize){
 		return dev;
 	}
 	res=read(dev,buf,bufsize);
+	if(res<0){
+		errno=-res;
+		return -1;
+	}
 	return res;
 }
 
@@ -185,5 +205,9 @@ int write_sess_path(char* path,int pathlen){
 		return dev;
 	}
 	res=write(dev,path,pathlen);
+	if(res<0){
+		errno=-res;
+		return -1;
+	}
 	return res;
 }
