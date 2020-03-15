@@ -13,7 +13,7 @@ shared-lib:
 demo-lib: shared-lib kmodule
 		$(MAKE) -C demo
 
-demo-wrap: kmodule
+demo-wrap: module
 		$(MAKE) -C demo demo-wrap
 
 clean:
@@ -21,13 +21,11 @@ clean:
 		$(MAKE) -C demo clean
 		$(MAKE) -C kmodule clean
 
-module-test: kmodule
+module-test: module
 		$(MAKE) -C kmodule insmod
 
 wrap-test: demo-wrap module-test
 		demo/demo
-		$(MAKE) -C kmodule rmmod
 
-lib-test: demo-lib module-test
-		LD_PRELOAD=$(PWD)/shared_lib/libsessionfs.so demo/demo
-		$(MAKE) -C kmodule rmmod
+lib-test: demo-lib
+		LD_PRELOAD=$(CURDIR)/shared_lib/libsessionfs.so LD_LIBRARY_PATH=$(CURDIR)/shared_lib demo/demo

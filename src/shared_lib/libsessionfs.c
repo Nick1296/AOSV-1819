@@ -12,12 +12,7 @@
 #include <stdio.h>
 #include <sys/ioctl.h>
 
-
-//to enable PATH_MAX
-#include<errno.h>
-#include <limits.h>
-
-///For the definition of the `O_SES` flag.
+///For the definition of the `O_SESS` flag.
 #include "libsessionfs.h"
 
 ///For the ioctls methods exposed by our char device
@@ -38,7 +33,7 @@ orig_close_type orig_close;
 
 ///a program constructor which saves the original value for the `open` and `close` symbols.
 static __attribute__((constructor)) void init_method(void){
-	orig_open = (orig_open_type) dlsym(RTLD_NEXT, "read");
+	orig_open = (orig_open_type) dlsym(RTLD_NEXT, "open");
 	orig_close = (orig_close_type) dlsym(RTLD_NEXT,"close");
 }
 
@@ -71,7 +66,7 @@ int close(int __fd){
 	memset(inc_path,0,PATH_MAX);
 	//we open the device
 	int dev;
-	printf("libsessionfs: opening char device");
+	printf("libsessionfs: opening char device\n");
 	dev=orig_open(DEV_PATH,O_WRONLY);
 	if(dev<0){
 		free(params);
@@ -82,11 +77,15 @@ int close(int __fd){
 	//we remove the incarnation
 	//we retry if we receive ENODEV, since the module will notice that there is a valid session to be closed
 	res=-ENODEV;
-	/// \todo check is there is a smarte way that spamming ioctls
-	while(res==-ENODEV){
-		res=ioctl(dev,IOCTL_SEQ_CLOSE,params);
-	}
+	/// \todo check is there is a smarter way than spamming ioctls
+	res=ioctl(dev,IOCTL_SEQ_CLOSE,params);
 	if(res<0){
+		if(res==-ENODEV){
+			printf("libsessionfs: device disabled, retry closing");
+			errno=ENODEV;
+			return -1;
+		}
+		printf("libsessionfs: error during session close\n");
 		orig_close(dev);
 		free(inc_path);
 		free(params);
@@ -122,24 +121,50 @@ int close(int __fd){
  */
 int open(const char* __file, int __oflag, ...){
 	int flag=0, res=0,dev;
+	char *slash="/";
 	//we get the session path from the device
-	char *sess_path=malloc(sizeof(char)*PATH_MAX),*path=NULL;
+	char *sess_path=malloc(sizeof(char)*PATH_MAX), *file_path=malloc(sizeof(char)*PATH_MAX), *path=NULL;
+	memset(file_path,0,sizeof(char)*PATH_MAX);
+	//we convert (if necessary) the give pathname to an absolute pathname
+	if(__file[0]!='/'){
+		printf("libsessionfs: converting pathname to absolute...\n");
+		path=realpath(__file,file_path);
+		if(path==NULL){
+			//the user might want to create a file
+			if(errno==ENOENT && (__oflag & O_CREAT)){
+				path=realpath(".",file_path);
+				printf("libsessionfs: absolute path for current directory: %s\n",file_path);
+				if(path==NULL){
+					return -1;
+				}
+				strncat(file_path,slash,strlen(slash));
+				strncat(file_path,__file,sizeof(char)*(PATH_MAX-strlen(file_path)+1));
+			}
+		}
+	} else {
+		strncpy(file_path,__file,sizeof(char)*PATH_MAX);
+	}
+	printf("libsessionfs: pathname: %s, absolute pathname: %s\n",__file,file_path);
+	memset(sess_path,0,sizeof(char)*PATH_MAX);
 	printf("libsessionfs: reading the current session path\n");
 	res=get_sess_path(sess_path,PATH_MAX);
 	if(res<0){
+		free(file_path);
+		free(sess_path);
 		return res;
 	}
-	printf("libsessionfs: current session path:%s \n given pathname:%s\n", sess_path,__file);
+	printf("libsessionfs: current session path: %s \t given pathname: %s\n", sess_path,file_path);
 	//we check if the file is in the right path
-	path=strstr(__file,sess_path);
-	free(sess_path);
+	path=strstr(file_path,sess_path);
 	// check for the presence of the O_SESS flag
 	flag=__oflag & O_SESS;
-	if(flag==4 && path!=NULL){
+	free(sess_path);
+	if(flag==O_SESS && path!=NULL){
 		printf("libsessionfs: detected O_SESS flag and correct path\n");
 		//we open the device
 		dev=orig_open(DEV_PATH,O_WRONLY);
 		if(dev<0){
+			free(file_path);
 			return dev;
 		}
 		printf("libsessionfs: allocating and filling a sess_params struct\n");
@@ -149,16 +174,20 @@ int open(const char* __file, int __oflag, ...){
 		if(params==NULL){
 			errno=ENOMEM;
 			orig_close(dev);
+			free(file_path);
 			return -1;
 		}
-		params->orig_path=__file;
+		params->orig_path=file_path;
 		params->flags=__oflag;
 		params->pid=getpid();
 		params->inc_path=NULL;
 		printf("libsessionfs: calling kernel module to create a new incarnation\n");
 		res=ioctl(dev,IOCTL_SEQ_OPEN,params);
 		if(res<0){
+			perror("libsessionfs: error creating the session, trying to close the invalid session");
+			close(params->filedes);
 			orig_close(dev);
+			free(file_path);
 			free(params);
 			errno=-res;
 			return -1;
@@ -168,14 +197,20 @@ int open(const char* __file, int __oflag, ...){
 			printf("libsessionfs: session invalid: closing\n");
 			//if is invalid we need to call our close
 			close(params->filedes);
+			errno=-EAGAIN;
+			free(file_path);
+			free(params);
+			return -1;
 		}
+		free(file_path);
 		res=params->filedes;
 		free(params);
-		errno=EAGAIN;
-		return -1;
+		printf("libsessionfs: session opened successfully\n");
+		return res;
 	} else {
 		printf("libsessionfs: calling libc open\n");
-		return orig_open(__file, __oflag);
+		//we flip the O_SESS flag just to be sure we aren't giving an unexpected flag to libc open.
+		return orig_open(__file, __oflag & ~O_SESS);
 	}
 }
 
@@ -183,7 +218,7 @@ int open(const char* __file, int __oflag, ...){
  * Reads from the device located at ::DEV_PATH.
  */
 int get_sess_path(char* buf,int bufsize){
-	int dev=-1,res=0;
+	int dev=0,res=0;
 	dev=orig_open(DEV_PATH, O_RDONLY);
 	if(dev<0){
 		return dev;
@@ -200,11 +235,18 @@ int get_sess_path(char* buf,int bufsize){
  */
 int write_sess_path(char* path,int pathlen){
 	int dev=-1, res=0;
+	char* abs_path=NULL;
+	printf("libsessionfs: convertin %s path to absolute\n",path);
+	abs_path=realpath(path,abs_path);
+	printf("libsessionfs: absolute path: %s\n",abs_path);
+	if(abs_path==NULL){
+		return -1;
+	}
 	dev=orig_open(DEV_PATH,O_WRONLY);
 	if(dev<0){
 		return dev;
 	}
-	res=write(dev,path,pathlen);
+	res=write(dev,abs_path,pathlen);
 	if(res<0){
 		errno=-res;
 		return -1;

@@ -8,6 +8,10 @@
  * Header file for the shared library that wraps the `open` and `close` functions.
  */
 
+//to enable PATH_MAX
+#include<errno.h>
+#include <limits.h>
+
 /** \brief Flag that enables the session semantic.
  *  Unused flag in `include/uapi/asm-generic/fcntl.h` that is repurposed to be used to enable the session semantic.
  */
@@ -25,4 +29,4 @@ int get_sess_path(char * buf,int buflen);
  * \param[in] buflen The length of the provided buffer.
  * \return The number of bytes written or an error code.
  */
-int change_sess_path(char* path,int pathlen);
+int write_sess_path(char* path,int pathlen);

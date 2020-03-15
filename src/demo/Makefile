@@ -1,7 +1,7 @@
 CCOPTS= -Wall -Wstrict-prototypes
-LIBS= -L $(PWD)/shared_lib/libsessionfs.so
+LIB_PATH= -L$(shell pwd)/../shared_lib
+LIB= -lsessionfs
 CC= gcc
-AR= ar
 
 
 BINS= demo
@@ -25,7 +25,7 @@ demo-wrap: wrap.o demo.o
 		$(CC) -Wl,-wrap=open -Wl,-wrap=close demo.o wrap.o -o demo
 
 demo-lib: $(OBJS)
-		$(CC) $(CCOPTS) -o demo $(OBJS) $(LIBS)
+		$(CC) $(LIB_PATH) $(CCOPTS) -o demo $(OBJS) $(LIB)
 
 clean:
 	rm -rf *.o *~  $(BINS)

@@ -39,7 +39,7 @@ MODULE_DESCRIPTION("A session based virtual filesystem wrapper");
 MODULE_VERSION("0.02");
 
 
-module_param(sess_path,charp,0664);
+module_param(sess_path,charp,0444);
 MODULE_PARM_DESC(sess_path,"path in which session sematic is enabled");
 
 /** \brief load the kernel module and the device

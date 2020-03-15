@@ -75,28 +75,39 @@ struct class* dev_class=NULL;
 ///Device object
 struct device* dev=NULL;
 
-/** \brief Check if the given path is a subpath of \ref sess_path
+/** \brief Check if the given path is a subpath of ::sess_path
 *
-* Gets the dentry from the given path and from  \ref sess_path and check is the second dentry is an ancestor of the first dentry.
-* \todo implement!
+* Gets the dentry from the given path and from  ::sess_path and check is the second dentry is an ancestor of the first dentry.
 * \param[in] path Path to be checked
-* \returns 1 if the given path is a subpath of \ref sess_path and 0 otherwise; -1 is returned on error.
+* \returns ::PATH_OK if the given path is a subpath of ::sess_path and !::PATH_OK otherwise; an error code is returned on error.
 */
 int path_check(const char* path){
 	struct path psess,pgiven;
 	struct dentry *dsess,*dgiven, *dentry;
 	int retval;
+	char* p_check=NULL;
 	//get dentry from the sess_path
 	retval=kern_path(sess_path,LOOKUP_FOLLOW,&psess);
 	if(retval!=0){
 		return retval;
 	}
+	printk(KERN_DEBUG "SessionFS char device: got %s dentry",sess_path);
 	dsess=psess.dentry;
 	//get dentry from given path
 	retval=kern_path(path,LOOKUP_FOLLOW,&pgiven);
-	if(retval!=0){
+	if(retval<0 && retval!=-ENOENT){
 		return retval;
+	}else{
+		/// \todo check is this is a valid solution
+		//we try to find sess_path as a substring of the given path
+		p_check=strstr(path,sess_path);
+		if(p_check==NULL){
+			return -ENOENT;
+		} else{
+			return PATH_OK;
+		}
 	}
+	printk(KERN_DEBUG "SessionFS char device: got %s dentry",path);
 	dgiven=pgiven.dentry;
 
 	dentry=dgiven;
@@ -132,12 +143,12 @@ static ssize_t device_read(struct file* file, char* buffer,size_t buflen,loff_t*
 	}
 	//we increment the refcount
 	atomic_add(1,&refcount);
-	printk(KERN_DEBUG "char device: read locking dev_lock");
+	printk(KERN_DEBUG "SessionFS char device: read locking dev_lock");
 	read_lock(&dev_lock);
-	printk(KERN_DEBUG "char device: reading session path\n");
+	printk(KERN_DEBUG "SessionFS char device: reading session path\n");
 	bytes_not_read=copy_to_user(buffer,sess_path,path_len);
 	read_unlock(&dev_lock);
-	printk(KERN_DEBUG "char device: read releasing dev_lock");
+	printk(KERN_DEBUG "SessionFS char device: read releasing dev_lock");
 	// we decrement the refcount
 	atomic_sub(1,&refcount);
 	if(bytes_not_read>0){
@@ -157,6 +168,7 @@ static ssize_t device_read(struct file* file, char* buffer,size_t buflen,loff_t*
  */
 static ssize_t device_write(struct file* file,const char* buffer,size_t buflen,loff_t* offset){
 	int bytes_not_written=0;
+	char * tmpbuf;
 	//we check that the device is not closing
 	if(atomic_read(&device_disabled)==DEVICE_DISABLED){
 		return -ENODEV;
@@ -165,19 +177,33 @@ static ssize_t device_write(struct file* file,const char* buffer,size_t buflen,l
 	if(buffer==NULL || buflen>PATH_MAX){
 		return -EINVAL;
 	}
+	//we check that the given path is an absolute path (i.e. it starts with '/')
+	tmpbuf=kzalloc(sizeof(char)*PATH_MAX, GFP_KERNEL);
+	if(!tmpbuf){
+		return -ENOMEM;
+	}
+	bytes_not_written=copy_from_user(tmpbuf,buffer,buflen);
+	if(bytes_not_written>0){
+		kfree(tmpbuf);
+		return -EINVAL;
+	}
+	if(tmpbuf[0]!='/'){
+		printk(KERN_WARNING "SessionFS char device: relative path specified, session path must be absolute");
+		kfree(tmpbuf);
+		return -EINVAL;
+	}
+
 	//we increment the refcount
 	atomic_add(1,&refcount);
-	printk(KERN_DEBUG "char device: write locking dev_lock");
+	printk(KERN_DEBUG "SessionFS char device: write locking dev_lock");
 	write_lock(&dev_lock);
-	bytes_not_written=copy_from_user(sess_path,buffer,buflen);
+	memcpy(sess_path,tmpbuf,sizeof(char)*PATH_MAX);
 	path_len=buflen;
 	write_unlock(&dev_lock);
-	printk(KERN_DEBUG "char device: write locking dev_lock");
+	printk(KERN_DEBUG "SessionFS char device: write locking dev_lock");
 	atomic_sub(1,&refcount);
-	if(bytes_not_written>0){
-		return -EAGAIN;
-	}
-	return buflen-bytes_not_written;
+	kfree(tmpbuf);
+	return 0;
 }
 
 /** \brief Allows every user to read and write the device file of our virtual device
@@ -202,7 +228,7 @@ static char *sessionfs_devnode(struct device *dev, umode_t *mode)
  *\param[in,out] param The ioctl param, which is a ::sess_params struct, that contains the information on the session that must be opened/closed and will be update with the information on the result of the operation.
  * \returns 0 on success or an error code.
  *
- * This function copies the ::sess_params struct in kernel space and cleans the userspace string in sees_params::inc_pathname.
+ * This function copies the ::sess_params struct in kernel space and cleans the userspace string in sess_params::inc_pathname.
  * Its behaviour differs in base of the ioctl sequence number specified:
  * * ::IOCTL_SEQ_OPEN: copies the pathname of the original file in kernel space and tries to create a session, by invoking ::create_session.
  * If the session and the incarnation are created succesfully the file descriptor of the incarnation is copied into sess_params::pid.
@@ -245,10 +271,10 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 		return -ENOMEM;
 	}
 
-	printk(KERN_DEBUG "char device: Allocated memory and copied parameters from userspace");
+	printk(KERN_DEBUG "SessionFS char device: Allocated memory and copied parameters from userspace");
 	switch(num){
 		case IOCTL_SEQ_OPEN:
-			printk(KERN_INFO "char device: creating a new session");
+			printk(KERN_INFO "SessionFS char device: creating a new session");
 			//copy the pathname string to kernel space
 			res=copy_from_user(orig_pathname,p->orig_path,sizeof(char)*PATH_MAX);
 			if(res>0){
@@ -257,9 +283,10 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 				atomic_sub(1,&refcount);
 				return -EINVAL;
 			}
-			printk(KERN_DEBUG "char device: checking that the original pathname is in %s",sess_path);
+			printk(KERN_DEBUG "SessionFS char device: checking that the original pathname is in %s",sess_path);
 			//we check that the original file pathname has ::sess_path as ancestor
 			res=path_check(orig_pathname);
+			printk(KERN_DEBUG "SessionFS char device: path_check result: %d",res);
 			if(res != PATH_OK){
 				kfree(orig_pathname);
 				kfree(p);
@@ -272,7 +299,7 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 				atomic_sub(1,&refcount);
 				return res;
 			}
-			printk(KERN_DEBUG "char device: path check ok, checking O_SESS flag presence");
+			printk(KERN_DEBUG "SessionFS char device: path check ok, checking O_SESS flag presence");
 			//we check if the flags include O_SESS and remove to avoid causing trouble for the open function
 			if(p->flags & O_SESS){
 				flag=p->flags & ~O_SESS;
@@ -282,7 +309,7 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 				atomic_sub(1,&refcount);
 				return -EINVAL;
 			}
-			printk(KERN_DEBUG "char device: flag check ok, creating session");
+			printk(KERN_DEBUG "SessionFS char device: flag check ok, creating session");
 			//we create a new session incarnation
 			inc=create_session(orig_pathname,flag,p->pid);
 			//return the error if we have failed in creating the session
@@ -294,23 +321,23 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 			}
 			//the validity of the session is set by the status of the incarnation
 			p->valid=inc->status;
-			printk(KERN_DEBUG "char device: copying parameters to userspace");
+			printk(KERN_DEBUG "SessionFS char device: copying parameters to userspace");
 			//we set the file descriptor into the sess_struct.
 			p->filedes=inc->filedes;
 			//we overwrite the existing sess_struct in userspace
 			res=copy_to_user((struct sess_params*)param,p,sizeof(struct sess_params));
-			kfree(orig_pathname);
 			kfree(p);
+			printk(KERN_DEBUG "SessionFS char device: bytes not copied to userspace: %d, size of strct sess_params: %ld",res, sizeof(struct sess_params));
 			if(res>0){
 				atomic_sub(1,&refcount);
 				return -EAGAIN;
 			}
-			printk(KERN_INFO "char device: session creation successful")
+			printk(KERN_INFO "SessionFS char device: session creation successful, session status: %d\n",inc->status);
 			res=inc->status;
 			break;
 
 		case IOCTL_SEQ_CLOSE:
-			printk(KERN_INFO "char device: closing an active incarnation");
+			printk(KERN_INFO "SessionFS char device: closing an active incarnation");
 			//we try to initialize the sess_params::inc_pathname with a sequence of 0, to see if it is a valid userspace memory address
 			res=copy_to_user(p->inc_path,orig_pathname,sizeof(char)*PATH_MAX);
 			kfree(orig_pathname);
@@ -319,11 +346,11 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 				atomic_sub(1,&refcount);
 				return -EINVAL;
 			}
-			printk(KERN_DEBUG "char device: inc_path variable initialized, attempting to close the incarnation");
+			printk(KERN_DEBUG "SessionFS char device: inc_path variable initialized, attempting to close the incarnation");
 			res=close_session(p->filedes,p->pid,&inc_pathname);
-			kfree(inc_pathname);
 			if(res<0){
-				printk(KERN_INFO "char device: failed closing the incarnation, sending SIGPIPE");
+				printk(KERN_INFO "SessionFS char device: failed closing the incarnation, sending SIGPIPE");
+				kfree(inc_pathname);
 				kfree(p);
 				//we get the task struct of the user process
 				pid=find_get_pid(p->pid);
@@ -342,7 +369,7 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 				return -EPIPE;
 			}
 			//we give the incarnation pathname to the userspace so the library can remove it
-			printk(KERN_DEBUG "char device: copying the pathname of the incarnation in userspace");
+			printk(KERN_DEBUG "SessionFS char device: copying the pathname of the incarnation in userspace");
 			res=copy_to_user(p->inc_path,inc_pathname,sizeof(char)*PATH_MAX);
 			kfree(inc_pathname);
 			if(res>0){
@@ -351,14 +378,14 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 				atomic_sub(1,&refcount);
 				return -EAGAIN;
 			}
-			printk(KERN_DEBUG "char device: copying the parameters back in userspace");
+			printk(KERN_DEBUG "SessionFS char device: copying the parameters back in userspace");
 			res=copy_to_user((struct sess_params*)param,p,sizeof(struct sess_params));
 			kfree(p);
 			if(res>0){
 				atomic_sub(1,&refcount);
 				return -EAGAIN;
 			}
-			printk(KERN_INFO "char device: closed incarnation succesfully");
+			printk(KERN_INFO "SessionFS char device: closed incarnation succesfully");
 			break;
 	}
 	atomic_sub(1,&refcount);
@@ -390,31 +417,31 @@ int init_device(void){
 	res=register_chrdev(MAJOR_NUM,DEVICE_NAME,dev_ops);
 	if(res<0){
 		release_manager();
-		printk(KERN_ALERT "char device: failed to register the sessionfs virtual device\n");
+		printk(KERN_ALERT "SessionFS char device: failed to register the sessionfs virtual device\n");
 		return res;
 	}
-	printk(KERN_INFO "char device: Device %s registered\n", DEVICE_NAME);
+	printk(KERN_INFO "SessionFS char device: Device %s registered\n", DEVICE_NAME);
 	//register the device class
 	dev_class=class_create(THIS_MODULE,CLASS_NAME);
 	if (IS_ERR(dev_class)){
 		release_manager();
 		unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
-		printk(KERN_ALERT "char device: Failed to register device class\n");
+		printk(KERN_ALERT "SessionFS char device: Failed to register device class\n");
 		return PTR_ERR(dev_class);
 	}
 	//setting devnode
 	dev_class->devnode=sessionfs_devnode;
-	printk("char device: SessionFS device class registered successfully\n");
+	printk("SessionFS char device: SessionFS device class registered successfully\n");
 	//register the device driver
 	dev = device_create(dev_class, NULL, MKDEV(MAJOR_NUM, 0), NULL, DEVICE_NAME);
 		if(IS_ERR(dev)){
 			release_manager();
 			class_destroy(dev_class);
 			unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
-			printk(KERN_ALERT "char device: Failed to create the device\n");
+			printk(KERN_ALERT "SessionFS char device: Failed to create the device\n");
 			return PTR_ERR(dev);
    }
-	printk(KERN_INFO "char device: SessionFS driver registered successfully\n");
+	printk(KERN_INFO "SessionFS char device: SessionFS driver registered successfully\n");
 	init_info(&(dev->kobj));
 	return 0;
 }
@@ -422,7 +449,7 @@ int init_device(void){
 /** Unregister the device, releases the session manager and frees the used memory ( ::dev_ops and ::sess_path)
  */
 int release_device(void){
-	printk(KERN_DEBUG "char device: releaseing the device resources");
+	printk(KERN_DEBUG "SessionFS char device: releasing the device resources");
 	//we flag the device as disabled
 	atomic_set(&device_disabled,DEVICE_DISABLED);
 	//we wait until the refcount drops to 0
@@ -430,12 +457,12 @@ int release_device(void){
 	while(atomic_read(&refcount)!=0){};
 	//we check if there are active incarnations
 	if(get_sessions_num()!=0){
-		printk(KERN_WARNING "char device: found %d active sessions, aborting device release");
+		printk(KERN_WARNING "SessionFS char device: found %d active sessions, aborting device release",get_sessions_num());
 		//we re-enable the device if we have some sessions that are not closed
 		atomic_set(&device_disabled,!DEVICE_DISABLED);
 		return -EAGAIN;
 	}
-	printk(KERN_INFO "char device: unregistering device and freeing used memory");
+	printk(KERN_INFO "SessionFS char device: unregistering device and freeing used memory");
 	//remove the info on sessions
 	release_info();
 	//unregister the device

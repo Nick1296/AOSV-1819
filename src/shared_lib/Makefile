@@ -1,7 +1,6 @@
-CCOPTS=-shared -fPIC -Wall -Wstrict-prototypes
+CCOPTS= -shared -fPIC -Wall -Werror -Wstrict-prototypes
 LIBS=-ldl
 CC=gcc
-AR=ar
 
 
 BINS= libsessionfs

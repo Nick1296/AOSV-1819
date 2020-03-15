@@ -10,10 +10,10 @@ clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(shell pwd) clean
 
 #quick test to see if the module is loaded correctly
-insmod:
+insmod: all
 	sudo dmesg -C
+	sudo dmesg -w -H &
 	sudo insmod SessionFS.ko
-	dmesg -w -H &
-rmmod: 
+rmmod:
 	sudo rmmod SessionFS
 	killall dmesg

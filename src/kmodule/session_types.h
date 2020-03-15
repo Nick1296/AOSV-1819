@@ -30,7 +30,7 @@ struct sess_info{
  * \param status Contains the error code that could have invalidated the incarnation. If its value is less than 0 then the incarnation is invalid and must be closed as soon as possible.
  */
 struct incarnation{
-	struct llist_node next;
+	struct llist_node node;
 	struct file* file;
 	struct kobj_attribute inc_attr;
 	const char* pathname;
@@ -44,6 +44,7 @@ struct incarnation{
  * \param incarnations List (lockless) of the active incarnations of the file.
  * \param info Informations on the current original file, represented by ::sess_info struct.
  * \param file The struct file that represents the original file.
+ * \param rcu_node Pointer to the ::struct session_rcu that contains the current session object.
  * \param pathame Pathname of the file that is opened with session semantic.
  * \param sess_lock read-write lock used to access ensure serialization in the session closures.
  * \param filedes Descriptor of the file opened with session semantic.
@@ -54,11 +55,24 @@ struct incarnation{
 struct session{
 	struct llist_head incarnations;
 	struct sess_info info;
+	struct session_rcu* rcu_node;
 	struct file* file;
 	const char* pathname;
 	rwlock_t sess_lock;
 	atomic_t refcount;
 	int valid;
+};
+
+/** \struct session_rcu
+ * \brief rcu item that contains a session.
+ * \param list_node used to navigate the list of sessions.
+ * \param rcu_head The rcu head structure used to protect the list with RCU.
+ * \param session The struct ::session which holds the session information.
+ */
+struct session_rcu{
+	struct list_head list_node;
+	struct rcu_head rcu_head;
+	struct session* session;
 };
 
 #endif
