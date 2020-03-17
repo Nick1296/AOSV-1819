@@ -31,10 +31,23 @@ typedef int (*orig_close_type)(int filedes);
 orig_open_type orig_open;
 orig_close_type orig_close;
 
-///a program constructor which saves the original value for the `open` and `close` symbols.
-static __attribute__((constructor)) void init_method(void){
+/** \brief a program constructor which saves the original value for the `open` and `close` symbols.
+* \return 0 on success nad -1 on error, setting errno.
+*/
+static __attribute__((constructor)) int init_method(void){
 	orig_open = (orig_open_type) dlsym(RTLD_NEXT, "open");
+	if(orig_open==NULL){
+		printf("libsessionfs: can't load libc open: %s",dlerror());
+		errno=ENODATA;
+		return -1;
+	}
 	orig_close = (orig_close_type) dlsym(RTLD_NEXT,"close");
+	if(orig_open==NULL){
+		printf("libsessionfs: can't load libc close: %s",dlerror());
+		errno=ENODATA;
+		return -1;
+	}
+	return 0;
 }
 
 /**
@@ -59,16 +72,75 @@ int close(int __fd){
 		errno = ENOMEM;
 		return -1;
 	}
-	params->orig_path=NULL;
+	char *tmp_path=malloc(sizeof(char)*PATH_MAX);
+	memset(tmp_path,0,sizeof(char)*PATH_MAX);
+	if(tmp_path==NULL){
+		free(params);
+		free(inc_path);
+		errno=ENOMEM;
+		return -1;
+	}
+	//we read the incarnation path from the file table
+	res=snprintf(tmp_path,sizeof(char)*PATH_MAX,"/proc/self/fd/%d",__fd);
+	if(res < 0){
+		free(params);
+		free(inc_path);
+		free(tmp_path);
+		return res;
+	}
+	res=readlink(tmp_path,inc_path,sizeof(char)*PATH_MAX);
+	if(res<0){
+		free(tmp_path);
+		free(params);
+		free(inc_path);
+		return res;
+	}
+	printf("libsessionfs: path to the file that must be closed: %s\n",inc_path);
+	//we trasform the path to the incarnation to the path to the session
+	char *inc_text=NULL,*sess_path=NULL;
+	sess_path=malloc(sizeof(char)*PATH_MAX);
+	if(sess_path==NULL){
+		free(tmp_path);
+		free(params);
+		free(inc_path);
+		errno=ENOMEM;
+		return -1;
+	}
+	memcpy(sess_path,inc_path,sizeof(char)*PATH_MAX);
+	res=snprintf(tmp_path,sizeof(char)*PATH_MAX,"_incarnation_%d_",getpid());
+	if(res < 0){
+		free(params);
+		free(inc_path);
+		free(tmp_path);
+		free(sess_path);
+		return res;
+	}
+	//we search for '_incarnation_[pid]_' in the file path, to understand if is an incarnation to be closed
+	inc_text=strstr(sess_path,tmp_path);
+	free(tmp_path);
+	if(inc_text==NULL){
+		//the file that we need to close is not an incarnation, so we call libc's close
+		printf("libsessionfs: file descriptor is not a session incarnation, using libc close\n");
+		free(params);
+		free(inc_path);
+		free(sess_path);
+		return orig_close(__fd);
+	} else {
+		printf("libsessionfs: detected a session incarnation, adjusting path to match original file\n");
+		//we remove the '_incarnation_...' to obtain the original file path
+		memset(inc_text,0,strlen(inc_text));
+		printf("libsessionfd: original file path: %s\n",sess_path);
+	}
+
+	params->orig_path=sess_path;
 	params->filedes=__fd;
 	params->pid=getpid();
-	params->inc_path=inc_path;
-	memset(inc_path,0,PATH_MAX);
 	//we open the device
 	int dev;
 	printf("libsessionfs: opening char device\n");
 	dev=orig_open(DEV_PATH,O_WRONLY);
 	if(dev<0){
+		free(sess_path);
 		free(params);
 		free(inc_path);
 		return dev;
@@ -77,8 +149,8 @@ int close(int __fd){
 	//we remove the incarnation
 	//we retry if we receive ENODEV, since the module will notice that there is a valid session to be closed
 	res=-ENODEV;
-	/// \todo check is there is a smarter way than spamming ioctls
 	res=ioctl(dev,IOCTL_SEQ_CLOSE,params);
+	free(sess_path);
 	if(res<0){
 		if(res==-ENODEV){
 			printf("libsessionfs: device disabled, retry closing");
@@ -103,8 +175,16 @@ int close(int __fd){
 	}
 	printf("libsessionfs: removing the incarnation file\n");
 	//we delete the incarnation
-	orig_close(dev);
+	res=orig_close(dev);
+	if(res<0){
+		printf("libsesionfs: error using libc's close to close the incarnation\n");
+		return res;
+	}
 	res=remove(inc_path);
+	if(res<0){
+		printf("libsessionfs: error durin the elimination of the incarnation file\n");
+		return res;
+	}
 	free(inc_path);
 	free(params);
 	return res;
@@ -180,7 +260,6 @@ int open(const char* __file, int __oflag, ...){
 		params->orig_path=file_path;
 		params->flags=__oflag;
 		params->pid=getpid();
-		params->inc_path=NULL;
 		printf("libsessionfs: calling kernel module to create a new incarnation\n");
 		res=ioctl(dev,IOCTL_SEQ_OPEN,params);
 		if(res<0){
@@ -233,10 +312,10 @@ int get_sess_path(char* buf,int bufsize){
 
 /** Writes on the device at ::DEV_PATH.
  */
-int write_sess_path(char* path,int pathlen){
+int write_sess_path(char* path){
 	int dev=-1, res=0;
 	char* abs_path=NULL;
-	printf("libsessionfs: convertin %s path to absolute\n",path);
+	printf("libsessionfs: converting %s path to absolute\n",path);
 	abs_path=realpath(path,abs_path);
 	printf("libsessionfs: absolute path: %s\n",abs_path);
 	if(abs_path==NULL){
@@ -246,7 +325,7 @@ int write_sess_path(char* path,int pathlen){
 	if(dev<0){
 		return dev;
 	}
-	res=write(dev,abs_path,pathlen);
+	res=write(dev,abs_path,strlen(abs_path));
 	if(res<0){
 		errno=-res;
 		return -1;

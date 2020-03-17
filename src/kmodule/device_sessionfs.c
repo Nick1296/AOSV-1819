@@ -237,7 +237,6 @@ static char *sessionfs_devnode(struct device *dev, umode_t *mode)
  */
 long int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 	char* orig_pathname=NULL;
-	const  char* inc_pathname=NULL;
 	int res=0;
 	int flag;
 	struct sess_params* p=NULL;
@@ -262,7 +261,6 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 		atomic_sub(1,&refcount);
 		return -EINVAL;
 	}
-
 	// allocating space for the original file pathname
 	orig_pathname=kzalloc(sizeof(char)*PATH_MAX, GFP_KERNEL);
 	if(!orig_pathname){
@@ -270,19 +268,19 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 		atomic_sub(1,&refcount);
 		return -ENOMEM;
 	}
+	printk(KERN_INFO "SessionFS char device: creating a new session");
+	//copy the pathname string to kernel space
+	res=copy_from_user(orig_pathname,p->orig_path,sizeof(char)*PATH_MAX);
+	if(res>0){
+		kfree(p);
+		kfree(orig_pathname);
+		atomic_sub(1,&refcount);
+		return -EINVAL;
+	}
 
-	printk(KERN_DEBUG "SessionFS char device: Allocated memory and copied parameters from userspace");
+	printk(KERN_DEBUG "SessionFS char device:Copied parameters from userspace");
 	switch(num){
 		case IOCTL_SEQ_OPEN:
-			printk(KERN_INFO "SessionFS char device: creating a new session");
-			//copy the pathname string to kernel space
-			res=copy_from_user(orig_pathname,p->orig_path,sizeof(char)*PATH_MAX);
-			if(res>0){
-				kfree(p);
-				kfree(orig_pathname);
-				atomic_sub(1,&refcount);
-				return -EINVAL;
-			}
 			printk(KERN_DEBUG "SessionFS char device: checking that the original pathname is in %s",sess_path);
 			//we check that the original file pathname has ::sess_path as ancestor
 			res=path_check(orig_pathname);
@@ -338,20 +336,10 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 
 		case IOCTL_SEQ_CLOSE:
 			printk(KERN_INFO "SessionFS char device: closing an active incarnation");
-			//we try to initialize the sess_params::inc_pathname with a sequence of 0, to see if it is a valid userspace memory address
-			res=copy_to_user(p->inc_path,orig_pathname,sizeof(char)*PATH_MAX);
+			res=close_session(orig_pathname,p->filedes,p->pid);
 			kfree(orig_pathname);
-			if(res>0){
-				kfree(p);
-				atomic_sub(1,&refcount);
-				return -EINVAL;
-			}
-			printk(KERN_DEBUG "SessionFS char device: inc_path variable initialized, attempting to close the incarnation");
-			res=close_session(p->filedes,p->pid,&inc_pathname);
 			if(res<0){
 				printk(KERN_INFO "SessionFS char device: failed closing the incarnation, sending SIGPIPE");
-				kfree(inc_pathname);
-				kfree(p);
 				//we get the task struct of the user process
 				pid=find_get_pid(p->pid);
 				if(IS_ERR(pid) || pid==NULL){
@@ -368,24 +356,8 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 				atomic_sub(1,&refcount);
 				return -EPIPE;
 			}
-			//we give the incarnation pathname to the userspace so the library can remove it
-			printk(KERN_DEBUG "SessionFS char device: copying the pathname of the incarnation in userspace");
-			res=copy_to_user(p->inc_path,inc_pathname,sizeof(char)*PATH_MAX);
-			kfree(inc_pathname);
-			if(res>0){
-				//this should not happen since we have already tried to copy into this struct at the beginning.
-				kfree(p);
-				atomic_sub(1,&refcount);
-				return -EAGAIN;
-			}
-			printk(KERN_DEBUG "SessionFS char device: copying the parameters back in userspace");
-			res=copy_to_user((struct sess_params*)param,p,sizeof(struct sess_params));
 			kfree(p);
-			if(res>0){
-				atomic_sub(1,&refcount);
-				return -EAGAIN;
-			}
-			printk(KERN_INFO "SessionFS char device: closed incarnation succesfully");
+			printk(KERN_INFO "SessionFS char device: closed incarnation successfully");
 			break;
 	}
 	atomic_sub(1,&refcount);
@@ -474,5 +446,6 @@ int release_device(void){
 	release_manager();
 	kfree(sess_path);
 	kfree(dev_ops);
+	printk("SessionFS char device: device release complete");
 	return 0;
 }

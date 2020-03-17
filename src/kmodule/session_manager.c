@@ -134,9 +134,12 @@ struct session* search_session(const char* pathname,int filedes, pid_t pid){
 		if(pathname!=NULL && strcmp(found->pathname,pathname) == 0){
 			printk(KERN_DEBUG "SessionFS session manager: found session by pathname");
 			rcu_read_unlock();
-			return found;
+			if(filedes==NO_FD){
+				return found;
+			}
 		}
-		if(filedes != NO_FD && found!=NULL){
+		/// \todo see if the check below is necessary since we do it when deleting the incarnation
+		if(filedes != NO_FD && found!=NULL && (pathname!=NULL && strcmp(found->pathname,pathname) == 0)){
 			printk("SessionFS session manager: searching incarnation in session %s",found->pathname);
 			/// \todo verify if we can traverse the llist without removing all the entries and without taking the read lock
 			llist_for_each_entry_safe(inc_it,inc_tmp,found->incarnations.first,node){
@@ -344,7 +347,7 @@ struct incarnation* create_incarnation(struct session* session, int flags, pid_t
 	}
 	printk(KERN_DEBUG "SessionFS session manager: allocated necessary memory");
 	//we use the actual timestamp so we are resistant to multiple opening of the same session by the same process
-	res=snprintf(pathname,PATH_MAX,"%s_%d_%lld_incarnation",session->pathname,pid,ktime_get_real());
+	res=snprintf(pathname,PATH_MAX,"%s_incarnation_%d_%lld",session->pathname,pid,ktime_get_real());
 	if(res>=PATH_MAX){
 		//we make the file shorter by opening it on /var/tmp
 		snprintf(pathname,PATH_MAX,"/var/tmp/%d_%lld",pid,ktime_get_real());
@@ -401,7 +404,7 @@ struct incarnation* create_incarnation(struct session* session, int flags, pid_t
  * **NOTE**: This method must be protected by obtaining the write lock on the ::incarnation parent ::session, otherwise we
  * could mess up the whole list of incarnations for a session.
  */
-int delete_incarnation(struct session* session,int filedes, pid_t pid,int overwrite,const char** pathname){
+int delete_incarnation(struct session* session,int filedes, pid_t pid,int overwrite){
 	int isfirst=0,res=0;
 	//we remove the incarnation from the list of incarnations
 	struct llist_node *it=NULL, *first=NULL;
@@ -443,8 +446,7 @@ int delete_incarnation(struct session* session,int filedes, pid_t pid,int overwr
 			return res;
 		}
 	}
-	*pathname=incarnation->pathname;
-	//we don't free the memory for the struct file and the pathname since we will leave to the library the task to close the file descriptor and remove the file
+	kfree(incarnation->pathname);
 	kfree(incarnation);
 	printk(KERN_DEBUG "SessionFS session manager: incarnation closed successfully");
 	return 0;
@@ -495,12 +497,12 @@ struct incarnation* create_session(const char* pathname, int flags, pid_t pid){
  * If after the incarnation deletion the session has no other incarnation the it will also schedule the session to
  * be destroyed.
  */
-int  close_session(int fdes, pid_t pid, const char** incarnation_pathname){
+int  close_session(const char* pathname,int fdes, pid_t pid){
 	//we locate the session in which we need to remove an incarnation
 	int res=0;
 	struct session* session=NULL;
 	printk(KERN_DEBUG "SessionFS session manager: searching for the incarnation to remove");
-	session=search_session(NULL,fdes,pid);
+	session=search_session(pathname,fdes,pid);
 	if(session==NULL){
 		printk(KERN_DEBUG "SessionFS session manager: session not found, aborting");
 		return -EBADF;
@@ -515,7 +517,7 @@ int  close_session(int fdes, pid_t pid, const char** incarnation_pathname){
 		return -EBADF;
 	}
 	//we eliminate the incarnation and we overwrite the original file with the incarnation content.
-	res=delete_incarnation(session, fdes, pid,OVERWRITE_ORIG,incarnation_pathname);
+	res=delete_incarnation(session, fdes, pid,OVERWRITE_ORIG);
 	if(res<0){
 		return res;
 	}
@@ -597,6 +599,7 @@ void release_manager(void){
 		call_rcu(&(session_rcu->rcu_head),delete_session_rcu);
 		delete_session(session_rcu->session);
 	}
+	printk(KERN_DEBUG "SessionFS session manager: session list empty, session manager release completed");
 	INIT_LIST_HEAD(&sessions);
 	spin_unlock(&sessions_lock);
 }

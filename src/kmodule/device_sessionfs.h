@@ -35,10 +35,9 @@
 #define VALID_SESS 0
 /**
  * \struct sess_params
- * \param orig_path The pathname of the original file to be opened in a session.
+ * \param orig_path The pathname of the original file to be opened in a session, or that represents an incarnation to be closed.
  * \param flags The flags used to determine the incarnation permissions.
  * \param pid The pid of the process that requests the creation of an incarnation.
- * \param inc_path The path to the incarnation file.
  * \param filedes The file descriptor of the incarnation.
  * \param valid The session can be invalid if there was an error in the copying of the original file over the incarnation file, so the value of this parameter can be < VALID_SESS.
  * We define a struct that will hold the pathanme and flags that determine the behaviour of the session opening.
@@ -47,7 +46,6 @@ struct sess_params{
 	const char* orig_path;
 	int flags;
 	pid_t pid;
-	char* inc_path;
 	int filedes;
 	int valid;
 };

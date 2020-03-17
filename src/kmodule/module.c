@@ -48,7 +48,7 @@ MODULE_PARM_DESC(sess_path,"path in which session sematic is enabled");
 static int __init sessionFS_load(void){
 	int ret;
 	ret=init_device();
-	printk(KERN_INFO "module loaded\n");
+	printk(KERN_INFO "SessionFS: module loaded\n");
 	return ret;
 }
 
@@ -58,7 +58,7 @@ static int __init sessionFS_load(void){
  */
 static void __exit sessionFS_unload(void){
 	release_device();
-		printk(KERN_INFO "module unloaded\n");
+	printk(KERN_INFO "SessionFS: module unloaded\n");
 }
 /// Specification of the module init function
 module_init(sessionFS_load);

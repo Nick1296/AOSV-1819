@@ -29,4 +29,4 @@ int get_sess_path(char * buf,int buflen);
  * \param[in] buflen The length of the provided buffer.
  * \return The number of bytes written or an error code.
  */
-int write_sess_path(char* path,int pathlen);
+int write_sess_path(char* path);
