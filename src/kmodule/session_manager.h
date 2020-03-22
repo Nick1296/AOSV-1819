@@ -17,7 +17,7 @@
 int init_manager(void);
 
 /// \brief Releases the resources of the manager and terminates all the sessions.
-void release_manager(void);
+int release_manager(void);
 
 /** \brief Create a new session for the specified file.
  * \param[in] pathname The pathname of the file in which the session will be created.

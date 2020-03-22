@@ -44,9 +44,10 @@ void remove_session_info(struct sess_info* session);
  * \param[in] parent_session The session which has generated the incarnation, represented by a struct ::sess_info.
  * \param[in] incarnation The incarnation to be added.
  * \param[in] pid The pid of the process that owns the incarnation.
+ * \param[in] fdes The file descriptor that identifies the incarnation in the process.
  * \returns 0 on success, or an error code.
  */
-int add_incarnation_info(struct sess_info* parent_session,struct kobj_attribute* incarnation,pid_t pid);
+int add_incarnation_info(struct sess_info* parent_session,struct kobj_attribute* incarnation,pid_t pid, int fdes);
 
 /** \brief Removes the kobject attribute incarnation from a kobject
  * \param[in] parent_session The session which has generated the incarnation, represented by a struct ::sess_info.

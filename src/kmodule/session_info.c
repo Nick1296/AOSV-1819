@@ -44,7 +44,7 @@ spinlock_t kobj_lock; /// \todo verify if its really necessary
  * The file content returned is the number of active incarnations for the current original file.
  */
  ssize_t active_incarnations_num_show(struct kobject *obj, struct kobj_attribute *attr, char* buf){
-	 struct sess_info* info=container_of(&obj,struct sess_info,kobj);
+	 struct sess_info* info=container_of(attr,struct sess_info,inc_num_attr);
 	 return scnprintf(buf,PAGE_SIZE,"%d",info->inc_num);
 }
 
@@ -109,15 +109,33 @@ sysfs_remove_file(dev_kobj,&(kattr.attr));
  * The ::session kobject will be created as a child of ::dev_kobj.
  */
 int add_session_info(const char* name,struct sess_info* session){
-	int res;
+	int res,i,namelen;
+	char * f_name=NULL;
 	printk(KERN_DEBUG "SessionFS session info: adding a info on a new original file: %s",name);
+	f_name=kzalloc(sizeof(char*)*PATH_MAX, GFP_KERNEL);
+	if(f_name==NULL){
+		return -ENOMEM;
+	}
+	//we format the filename substituting '/' with '-'
+	namelen=strlen(name);
+	for(i=0;i<namelen;i++){
+		if(name[i]!='/'){
+			f_name[i]=name[i];
+		} else {
+			f_name[i]='-';
+		}
+	}
+	session->f_name=f_name;
+	printk(KERN_DEBUG "SessionFS session info: formatted filename: %s",f_name);
 	//we get the lock
 	spin_lock(&kobj_lock);
 	//we get the root kobject
 	kobject_get(dev_kobj);
 	//we add the session kobject as a child of the root kobject
-	session->kobj=kobject_create_and_add(name,dev_kobj);
+	session->kobj=kobject_create_and_add(f_name,dev_kobj);
 	if(!session->kobj){
+		kfree(f_name);
+		session->f_name=NULL;
 		kobject_put(dev_kobj);
 		spin_unlock(&kobj_lock);
 		return -ENOMEM;
@@ -133,6 +151,8 @@ int add_session_info(const char* name,struct sess_info* session){
 	res=sysfs_create_file(session->kobj,&(session->inc_num_attr.attr));
 	spin_unlock(&kobj_lock);
 	if(res<0){
+		kfree(f_name);
+		session->f_name=NULL;
 		kobject_put(dev_kobj);
 		kobject_del(session->kobj);
 		return res;
@@ -153,12 +173,13 @@ void remove_session_info(struct sess_info* session){
 	//we remove the entry from the parent folder
 	kobject_del(session->kobj);
 	spin_unlock(&kobj_lock);
+	kfree(session->f_name);
 }
 
 /** The kobject attribute has the process pid as filename and contains the process name.
  * By adding a new incarnation we increment the global number of sessions and the number of incarnation for the original file;
  */
-int add_incarnation_info(struct sess_info* parent_session,struct kobj_attribute* incarnation,pid_t pid){
+int add_incarnation_info(struct sess_info* parent_session,struct kobj_attribute* incarnation,pid_t pid,int fdes){
 	int res;
 	//we allocate memory for the attribute name
 	char* name=kzalloc(sizeof(char)*512, GFP_KERNEL);
@@ -167,7 +188,7 @@ int add_incarnation_info(struct sess_info* parent_session,struct kobj_attribute*
 	}
 	printk(KERN_DEBUG "SessionFS session info: adding info on the incarnation created for process %d",pid);
 //we initialize the attribute name
-scnprintf(name,512,"%d",pid);
+scnprintf(name,20,"%d_%d",pid,fdes);
 //we get the lock
 	spin_lock(&kobj_lock);
 	//we increment the global number of sessions

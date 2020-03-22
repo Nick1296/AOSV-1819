@@ -28,7 +28,7 @@
 #include<linux/module.h>
 //for error numbers
 #include <uapi/asm-generic/errno.h>
-//for get_pid_task
+//for find_get_pid
 #include <linux/pid.h>
 //for struct task_struct
 #include <linux/sched.h>
@@ -173,10 +173,13 @@ static ssize_t device_write(struct file* file,const char* buffer,size_t buflen,l
 	if(atomic_read(&device_disabled)==DEVICE_DISABLED){
 		return -ENODEV;
 	}
+
 	// some basic sanity checks over arguments
 	if(buffer==NULL || buflen>PATH_MAX){
 		return -EINVAL;
 	}
+	//we increment the refcount
+	atomic_add(1,&refcount);
 	//we check that the given path is an absolute path (i.e. it starts with '/')
 	tmpbuf=kzalloc(sizeof(char)*PATH_MAX, GFP_KERNEL);
 	if(!tmpbuf){
@@ -193,8 +196,7 @@ static ssize_t device_write(struct file* file,const char* buffer,size_t buflen,l
 		return -EINVAL;
 	}
 
-	//we increment the refcount
-	atomic_add(1,&refcount);
+
 	printk(KERN_DEBUG "SessionFS char device: write locking dev_lock");
 	write_lock(&dev_lock);
 	memcpy(sess_path,tmpbuf,sizeof(char)*PATH_MAX);
@@ -421,15 +423,20 @@ int init_device(void){
 /** Unregister the device, releases the session manager and frees the used memory ( ::dev_ops and ::sess_path)
  */
 int release_device(void){
+	int res;
 	printk(KERN_DEBUG "SessionFS char device: releasing the device resources");
 	//we flag the device as disabled
 	atomic_set(&device_disabled,DEVICE_DISABLED);
 	//we wait until the refcount drops to 0
-	/// \todo check if this is correct way to wait for the refcount and if this could create a deadlock with the session manager
-	while(atomic_read(&refcount)!=0){};
+	if(atomic_read(&refcount)!=0){
+		printk(KERN_WARNING "SessionFS char device: device in use, can't release it");
+		return -EAGAIN;
+	};
+	printk(KERN_DEBUG "SessionFS char device: requesting session manager release");
+	res=release_manager();
 	//we check if there are active incarnations
-	if(get_sessions_num()!=0){
-		printk(KERN_WARNING "SessionFS char device: found %d active sessions, aborting device release",get_sessions_num());
+	if(res<0){
+		printk(KERN_WARNING "SessionFS char device: session manager found %d active sessions, aborting device release",get_sessions_num());
 		//we re-enable the device if we have some sessions that are not closed
 		atomic_set(&device_disabled,!DEVICE_DISABLED);
 		return -EAGAIN;
@@ -443,7 +450,6 @@ int release_device(void){
 	class_destroy(dev_class);
 	unregister_chrdev(MAJOR_NUM,DEVICE_NAME);
 	//free used memory
-	release_manager();
 	kfree(sess_path);
 	kfree(dev_ops);
 	printk("SessionFS char device: device release complete");

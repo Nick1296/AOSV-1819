@@ -12,10 +12,12 @@
  * \param kobj The session kernel object.
  * \param inc_num_attr The kernel object attribute that represents the number of incanration for the original file.
  * \param inc_num The actual number of open incarnation for the original file.
+ * \param f_name Formatted filename of the session object, where each '/' is replaced by a '-'.
  */
 struct sess_info{
 	struct kobject* kobj;
 	struct kobj_attribute inc_num_attr;
+	char* f_name;
 	int inc_num;
 };
 

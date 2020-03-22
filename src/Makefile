@@ -27,5 +27,5 @@ module-test: module
 wrap-test: demo-wrap module-test
 		demo/demo
 
-lib-test: demo-lib
+lib-test: demo-lib module-test
 		LD_PRELOAD=$(CURDIR)/shared_lib/libsessionfs.so LD_LIBRARY_PATH=$(CURDIR)/shared_lib demo/demo

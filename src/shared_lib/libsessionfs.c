@@ -131,7 +131,6 @@ int close(int __fd){
 		memset(inc_text,0,strlen(inc_text));
 		printf("libsessionfd: original file path: %s\n",sess_path);
 	}
-
 	params->orig_path=sess_path;
 	params->filedes=__fd;
 	params->pid=getpid();
@@ -282,10 +281,9 @@ int open(const char* __file, int __oflag, ...){
 			return -1;
 		}
 		free(file_path);
-		res=params->filedes;
 		free(params);
-		printf("libsessionfs: session opened successfully\n");
-		return res;
+		printf("libsessionfs: session opened successfully, fd:%d\n",params->filedes);
+		return params->filedes;
 	} else {
 		printf("libsessionfs: calling libc open\n");
 		//we flip the O_SESS flag just to be sure we aren't giving an unexpected flag to libc open.
