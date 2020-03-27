@@ -1,6 +1,6 @@
-CCOPTS= -Wall -Wstrict-prototypes
+CCOPTS= -Wall -Wstrict-prototypes -ggdb
 LIB_PATH= -L$(shell pwd)/../shared_lib
-LIB= -lsessionfs
+LIB= -lsessionfs -fsanitize=address
 CC= gcc
 
 
@@ -16,13 +16,13 @@ HEADERS=
 all: demo-lib
 
 demo.o: $(OBJS)
-		$(CC) -c -o demo.o $(OBJS)
+		$(CC) -c -ggdb -o demo.o $(OBJS) -fsanitize=address
 
 wrap.o: wrap.c
-		$(CC) -c -o wrap.o wrap.c
+		$(CC) -c -ggdb -o wrap.o wrap.c -fsanitize=address
 
 demo-wrap: wrap.o demo.o
-		$(CC) -Wl,-wrap=open -Wl,-wrap=close demo.o wrap.o -o demo
+		$(CC) -Wl,--wrap=open -Wl,-wrap=close demo.o wrap.o -o demo
 
 demo-lib: $(OBJS)
 		$(CC) $(LIB_PATH) $(CCOPTS) -o demo $(OBJS) $(LIB)
