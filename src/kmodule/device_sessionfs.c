@@ -87,6 +87,7 @@ int path_check(const char* path){
 	int retval;
 	char* p_check=NULL;
 	//get dentry from the sess_path
+	read_lock(&dev_lock);
 	retval=kern_path(sess_path,LOOKUP_FOLLOW,&psess);
 	if(retval!=0){
 		return retval;
@@ -101,12 +102,14 @@ int path_check(const char* path){
 		/// \todo check is this is a valid solution
 		//we try to find sess_path as a substring of the given path
 		p_check=strstr(path,sess_path);
+		read_unlock(&dev_lock);
 		if(p_check==NULL){
 			return -ENOENT;
 		} else{
 			return PATH_OK;
 		}
 	}
+	read_unlock(&dev_lock);
 	printk(KERN_DEBUG "SessionFS char device: got %s dentry",path);
 	dgiven=pgiven.dentry;
 
@@ -143,12 +146,12 @@ static ssize_t device_read(struct file* file, char* buffer,size_t buflen,loff_t*
 	}
 	//we increment the refcount
 	atomic_add(1,&refcount);
-	printk(KERN_DEBUG "SessionFS char device: read locking dev_lock");
+	printk(KERN_DEBUG "SessionFS char device: read locking dev_lock for device_read");
 	read_lock(&dev_lock);
 	printk(KERN_DEBUG "SessionFS char device: reading session path\n");
 	bytes_not_read=copy_to_user(buffer,sess_path,path_len);
 	read_unlock(&dev_lock);
-	printk(KERN_DEBUG "SessionFS char device: read releasing dev_lock");
+	printk(KERN_DEBUG "SessionFS char device: read releasing dev_lock for device_read");
 	// we decrement the refcount
 	atomic_sub(1,&refcount);
 	if(bytes_not_read>0){
@@ -197,12 +200,15 @@ static ssize_t device_write(struct file* file,const char* buffer,size_t buflen,l
 	}
 
 
-	printk(KERN_DEBUG "SessionFS char device: write locking dev_lock");
+	printk(KERN_DEBUG "SessionFS char device: write locking dev_lock for device_write");
 	write_lock(&dev_lock);
-	memcpy(sess_path,tmpbuf,sizeof(char)*PATH_MAX);
+	memset(sess_path,0,sizeof(char)*PATH_MAX);
+	memcpy(sess_path,tmpbuf,sizeof(char)*buflen);
+	//adding string terminator
+	sess_path[PATH_MAX-1]='\0';
 	path_len=buflen;
 	write_unlock(&dev_lock);
-	printk(KERN_DEBUG "SessionFS char device: write locking dev_lock");
+	printk(KERN_DEBUG "SessionFS char device: write releasing dev_lock for device_write");
 	atomic_sub(1,&refcount);
 	kfree(tmpbuf);
 	return 0;

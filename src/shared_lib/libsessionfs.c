@@ -129,7 +129,7 @@ int close(int __fd){
 		printf("libsessionfs: detected a session incarnation, adjusting path to match original file\n");
 		//we remove the '_incarnation_...' to obtain the original file path
 		memset(inc_text,0,strlen(inc_text));
-		printf("libsessionfd: original file path: %s\n",sess_path);
+		printf("libsessionfs: original file path: %s\n",sess_path);
 	}
 	params->orig_path=sess_path;
 	params->filedes=__fd;
@@ -176,7 +176,7 @@ int close(int __fd){
 	//we delete the incarnation
 	res=orig_close(dev);
 	if(res<0){
-		printf("libsesionfs: error using libc's close to close the incarnation\n");
+		printf("libsessionfs: error using libc's close to close the incarnation\n");
 		return res;
 	}
 	res=remove(inc_path);
@@ -203,6 +203,11 @@ int open(const char* __file, int __oflag, ...){
 	char *slash="/";
 	//we get the session path from the device
 	char *sess_path=malloc(sizeof(char)*PATH_MAX), *file_path=malloc(sizeof(char)*PATH_MAX), *path=NULL;
+	if(sess_path==NULL || file_path==NULL){
+		printf("libsessionfs: not enough memory\n");
+		errno=-ENOMEM;
+		return -1;
+	}
 	memset(file_path,0,sizeof(char)*PATH_MAX);
 	//we convert (if necessary) the give pathname to an absolute pathname
 	if(__file[0]!='/'){
@@ -218,6 +223,11 @@ int open(const char* __file, int __oflag, ...){
 				}
 				strncat(file_path,slash,strlen(slash));
 				strncat(file_path,__file,sizeof(char)*(PATH_MAX-strlen(file_path)+1));
+			}else{
+				printf("libsessionfs: path conversion failed\n");
+				free(sess_path);
+				free(file_path);
+				return -1;
 			}
 		}
 	} else {
@@ -281,10 +291,12 @@ int open(const char* __file, int __oflag, ...){
 			return -1;
 		}
 		free(file_path);
-		free(params);
 		printf("libsessionfs: session opened successfully, fd:%d\n",params->filedes);
-		return params->filedes;
+		res=params->filedes;
+		free(params);
+		return res;
 	} else {
+		free(file_path);
 		printf("libsessionfs: calling libc open\n");
 		//we flip the O_SESS flag just to be sure we aren't giving an unexpected flag to libc open.
 		return orig_open(__file, __oflag & ~O_SESS);
@@ -298,6 +310,7 @@ int get_sess_path(char* buf,int bufsize){
 	int dev=0,res=0;
 	dev=orig_open(DEV_PATH, O_RDONLY);
 	if(dev<0){
+		perror("libsessionfs: can't open SessionFS_dev");
 		return dev;
 	}
 	res=read(dev,buf,bufsize);
@@ -313,17 +326,21 @@ int get_sess_path(char* buf,int bufsize){
 int write_sess_path(char* path){
 	int dev=-1, res=0;
 	char* abs_path=NULL;
+	dev=orig_open(DEV_PATH,O_WRONLY);
+	if(dev<0){
+		perror("libsessionfs: can't open SessionFS_dev");
+		return dev;
+	}
 	printf("libsessionfs: converting %s path to absolute\n",path);
 	abs_path=realpath(path,abs_path);
-	printf("libsessionfs: absolute path: %s\n",abs_path);
 	if(abs_path==NULL){
 		return -1;
 	}
-	dev=orig_open(DEV_PATH,O_WRONLY);
-	if(dev<0){
-		return dev;
-	}
+	//adding string terminator, may overwrite the lasta caracter bus is needed.
+	abs_path[PATH_MAX]='\0';
+	printf("libsessionfs: absolute path: %s\n",abs_path);
 	res=write(dev,abs_path,strlen(abs_path));
+	free(abs_path);
 	if(res<0){
 		errno=-res;
 		return -1;

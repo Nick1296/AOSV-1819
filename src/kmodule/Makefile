@@ -13,6 +13,7 @@ clean:
 insmod: all
 	sudo dmesg -C
 	sudo insmod SessionFS.ko
+
 rmmod:
 	sudo rmmod SessionFS
 	sudo killall dmesg

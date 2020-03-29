@@ -27,5 +27,19 @@ module-test: module
 wrap-test: demo-wrap module-test
 		demo/demo
 
-lib-test: demo-lib module-test
-		LD_PRELOAD=$(CURDIR)/shared_lib/libsessionfs.so LD_LIBRARY_PATH=$(CURDIR)/shared_lib demo/demo
+lib-test-single: demo-lib module-test
+		LD_PRELOAD="/lib/libasan.so $(CURDIR)/shared_lib/libsessionfs.so" LD_LIBRARY_PATH=$(CURDIR)/shared_lib demo/demo 1 20
+		$(MAKE) -C kmodule rmmod
+
+
+lib-test-multi: demo-lib module-test
+		LD_PRELOAD="/lib/libasan.so $(CURDIR)/shared_lib/libsessionfs.so" LD_LIBRARY_PATH=$(CURDIR)/shared_lib demo/demo 15 15
+		$(MAKE) -C kmodule rmmod
+
+lib-stress-test-single: demo-lib module-test
+		LD_PRELOAD="/lib/libasan.so $(CURDIR)/shared_lib/libsessionfs.so" LD_LIBRARY_PATH=$(CURDIR)/shared_lib demo/demo 1 100
+		$(MAKE) -C kmodule rmmod
+
+lib-stress-test-multi: demo-lib module-test
+		LD_PRELOAD="/lib/libasan.so $(CURDIR)/shared_lib/libsessionfs.so" LD_LIBRARY_PATH=$(CURDIR)/shared_lib demo/demo 100 100
+		$(MAKE) -C kmodule rmmod

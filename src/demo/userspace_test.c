@@ -100,9 +100,6 @@ void func_test(int files_max,char* base_fname){
 	dummy_content_len=strlen(dummy_content);
 	printf("%d: dummy_content: %s lenght: %d\n",pid,dummy_content,dummy_content_len);
 
-	// we use the process pid as seed
-	// srand(pid);
-
 	for(file_i=0;file_i< file_num;file_i++){
 		//we determine the filename
 		fnames[file_i]=malloc(sizeof(char)*PATH_MAX);
@@ -125,14 +122,18 @@ void func_test(int files_max,char* base_fname){
 		close(sess_num_fd);
 
 		// we open a file with the O_SESS flag
+		if(rand()%2){
+			printf("sleeping for 10 seconds before opening the file");
+			sleep(10);
+		}
 		ret=open(fnames[file_i], O_CREAT | O_SESS | O_RDWR);
 		fd[file_i]=ret;
 		if(ret<0){
 			memset(err_buf,0,sizeof(char)*1024);
 			snprintf(err_buf,1024,"%d: error during opening the file with O_SESS",pid);
 			perror(err_buf);
+			break;
 		}
-		assert(ret>0);
 
 		// we check that active_sessions_num has incremented
 		printf("%d: re-reading session number to see if it has changed...\n",pid);
@@ -195,6 +196,7 @@ void func_test(int files_max,char* base_fname){
 		printf("%d: process name: %s\n",pid,buf);
 		close(proc_name_fd);
 
+
 		// write and read test
 		printf("%d: writing a test string into file %s\n",pid,fnames[file_i]);
 		//we determine the (approximate) size of the our write operations from 0 to ~ 1MB
@@ -202,6 +204,19 @@ void func_test(int files_max,char* base_fname){
 		content_size=(content_size/dummy_content_len+1)*dummy_content_len;
 		printf("%d: write size on %s: %d bytes\n",pid,fnames[file_i],content_size);
 		written=0;
+		//we seek to pid*dummy_content_len in the file so we can have a chance to see the processes that have used this file
+		if(rand()%2){
+			printf("%d: appending content to %s\n",pid,fnames[file_i]);
+			ret=lseek(fd[file_i],0,SEEK_END);
+			if(ret<0){
+				memset(err_buf,0,sizeof(char)*1024);
+				snprintf(err_buf,1024,"%d: can't seeek at the and of the file %s",pid,fnames[file_i]);
+				perror(err_buf);
+			}
+		}else {
+			printf("%d: owerwriting file %s\n",pid, fnames[file_i]);
+		}
+		assert(ret>=0);
 		//we write many times the pid of the current process to match the written file size
 		while(written <= content_size){
 			ret=write(fd[file_i],dummy_content,dummy_content_len);
@@ -276,7 +291,7 @@ void func_test(int files_max,char* base_fname){
 		}
 		memset(buf,0,sizeof(char)*PATH_MAX);
 		read(sess_num_fd,buf,PATH_MAX);
-		printf("active sessions: %s\n",buf);
+		printf("%d: active sessions: %s\n",pid,buf);
 		close(sess_num_fd);
 		free(fnames[file_i]);
 	}
@@ -295,31 +310,27 @@ void func_test(int files_max,char* base_fname){
  * Then we close both files.
  */
 void sess_change_test(void){
-	int f1,f2,ret;
+	int f1,f2,ret,pid;
+	pid=getpid();
 	//we change the session path to the current directory
 	ret=change_sess_path(".");
 	assert(ret>=0);
-	printf("opening a file with O_SESS in the current directory\n");
+	printf("%d: opening a file with O_SESS in the current directory\n",pid);
 	ret=open("sess_change_test1.txt", O_CREAT | O_SESS | O_RDWR);
 	if(ret<0){
 		perror("error during opening the file with O_SESS");
 	}
-	assert(ret>0);
 	f1=ret;
-	printf("changing session path to '/mnt' and trying to open another file with O_SESS in the same position as before\n");
+	printf("%d:changing session path to '/mnt' and trying to open another file with O_SESS in the same position as before\n",pid);
 	ret=change_sess_path("/mnt");
-	assert(ret>=0);
 	ret=open("sess_change_test2.txt", O_CREAT | O_SESS | O_RDWR);
 	if(ret<0){
 		perror("error during opening the file with O_SESS not in the current session path");
 	}
-	assert(ret>0);
 	f2=ret;
-	printf("we close both files\n");
+	printf("%d:we close both files\n",pid);
 	ret=close(f1);
-	assert(ret>=0);
 	ret=close(f2);
-	assert(ret>=0);
 }
 
 /** \brief Test file semantic with a session opened when forking
@@ -362,22 +373,25 @@ void fork_test(void){
 
 	pid_o=getpid();
 	pid=fork();
+	if(pid!=0){
+		printf("%d: child pid:%d\n",pid_o,pid);
+	}
 	//we initialize the dummy content
 	memset(dummy_content,0,20);
 	snprintf(dummy_content,20,"\t %d \t",pid);
 	dummy_content_len=strlen(dummy_content);
 	printf("%d: dummy_content: %s lenght: %d\n",pid,dummy_content,dummy_content_len);
 	// we check that active_sessions_num has incremented
-	printf("%d: re-reading session number to see if it has changed...\n",pid);
+	printf("%d: re-reading session number to see if it has changed...\n",pid_o);
 	sess_num_fd=open("/sys/devices/virtual/SessionFS_class/SessionFS_dev/active_sessions_num", O_RDONLY);
 	if(sess_num_fd<0){
 		memset(err_buf,0,sizeof(char)*1024);
-		snprintf(err_buf,1024,"%d: can't open active_sessions_num file",pid);
+		snprintf(err_buf,1024,"%d: can't open active_sessions_num file",pid_o);
 		perror(err_buf);
 	}
 	memset(buf,0,sizeof(char)*PATH_MAX);
 	read(sess_num_fd,buf,PATH_MAX);
-	printf("%d: active sessions: %s\n",pid,buf);
+	printf("%d: active sessions: %s\n",pid_o,buf);
 
 	realpath("fork_test.txt",buf2);
 	for(i=0;i<strlen(buf2);i++){
@@ -392,13 +406,13 @@ void fork_test(void){
 	inc_num_fd=open(buf,O_RDONLY);
 	if(inc_num_fd<0){
 		memset(err_buf,0,sizeof(char)*1024);
-		snprintf(err_buf,1024,"%d: can't open active active_incarnations_num file for file %s",pid,"fork_test.txt");
+		snprintf(err_buf,1024,"%d: can't open active active_incarnations_num file for file %s",pid_o,"fork_test.txt");
 		perror(err_buf);
 	}
 
 	memset(buf,0,sizeof(char)*PATH_MAX);
 	read(inc_num_fd,buf,PATH_MAX);
-	printf("%d: active_incarnations_num: %s for file %s\n",pid,buf,"fork_test.txt");
+	printf("%d: active_incarnations_num: %s for file %s\n",pid_o,buf,"fork_test.txt");
 	close(inc_num_fd);
 
 	memset(buf,0,sizeof(char)*PATH_MAX);
@@ -416,17 +430,17 @@ void fork_test(void){
 	proc_name_fd=open(buf,O_RDONLY);
 	if(proc_name_fd<0){
 		memset(err_buf,0,sizeof(char)*1024);
-		snprintf(err_buf,1024,"%d: can't open pid file, for file %s",pid,"fork_test.txt");
+		snprintf(err_buf,1024,"%d: can't open pid file, for file %s",pid_o,"fork_test.txt");
 		perror(err_buf);
 	}
 
 	memset(buf,0,sizeof(char)*PATH_MAX);
 	read(proc_name_fd,buf,PATH_MAX);
-	printf("%d: process name: %s\n",pid,buf);
+	printf("%d: process name: %s\n",pid_o,buf);
 	close(proc_name_fd);
 
 	// write and read test
-	printf("%d: writing a test string into file %s\n",pid,"fork_test.txt");
+	printf("%d: writing a test string into file %s\n",pid_o,"fork_test.txt");
 	//we determine the (approximate) size of the our write operations from 0 to ~ 1MB
 	content_size=rand()% (1 << 5);
 	content_size=(content_size/dummy_content_len+1)*dummy_content_len;
@@ -437,7 +451,7 @@ void fork_test(void){
 		ret=write(fd,dummy_content,dummy_content_len);
 		if(ret<dummy_content_len){
 			memset(err_buf,0,sizeof(char)*1024);
-			snprintf(err_buf,1024,"%d: can't write the pid on file %s",pid,"fork_test.txt");
+			snprintf(err_buf,1024,"%d: can't write the pid on file %s",pid_o,"fork_test.txt");
 			perror(err_buf);
 		}
 		written+=ret;
@@ -445,7 +459,7 @@ void fork_test(void){
 		ret=lseek(fd,-ret,SEEK_CUR);
 		if(ret<0){
 			memset(err_buf,0,sizeof(char)*1024);
-			snprintf(err_buf,1024,"%d: error while seeking backwards in the file",pid);
+			snprintf(err_buf,1024,"%d: error while seeking backwards in the file",pid_o);
 			perror(err_buf);
 		}
 		// we check that we have wrote the correct information
@@ -453,15 +467,15 @@ void fork_test(void){
 		ret=read(fd,buf,dummy_content_len);
 		ret=strncmp(dummy_content,buf,dummy_content_len);
 		if(ret!=0){
-			printf("%d error during write on file %s: file contents mismatch\n",pid ,"fork_test.txt");
+			printf("%d error during write on file %s: file contents mismatch\n",pid_o ,"fork_test.txt");
 		}
 	}
 	//we pause one of the two processes to gice the change to the other to write on the file, but only in some cases.
 	if((pid_o+pid)%2){
-		printf("%d: sleeping for 10 seconds\n",pid);
+		printf("%d: sleeping for 10 seconds\n",pid_o);
 		sleep(10);
 	}
-	printf("%d: closing the file\n",pid);
+	printf("%d: closing the file\n",pid_o);
 	close(fd);
 	if(pid==0){
 		exit(0);
@@ -481,60 +495,47 @@ void fork_test(void){
  */
 int main(int argc, char** argv){
 	int ret,file_max=0,process_max=0, process_num,i,pid;
+	char* base_fname=NULL;
 	if(argc<3){
 		printf("Usage: LD_PRELOAD=[ path to libsessionfs.so] LD_LIBRARY_PATH=[path to libsessionfs folder] demo [max processes number] [max files number]");
 		return -1;
 	}
-	printf("PATH_MAX:%d\n",PATH_MAX);
 	process_max=atoi(argv[1]);
 	file_max=atoi(argv[2]);
 	printf("Maximum number of files that can be used:%d\n",file_max);
 	printf("Maximum number of processes used in the test:%d\n",process_max);
 	if(process_max==1){
-		printf("\t\t\tchanging session path to the current directory\n");
-		//we change the session path to the current directory
-		ret=change_sess_path(".");
-		assert(ret>=0);
-		//we do a basic functionality test
-		printf("\t\t\tsingle thread basic functionality test:\n");
-		func_test(file_max,"single_thread");
-		//we test the behaviour of sessions when we change the session path
-		printf("\n\n\n\t\t\tsession change test\n");
-		sess_change_test();
-		printf("\n\n\n\t\t\t%d -- fork with opened session test\n",getpid());
-		//we change the session path to the current directory
-		ret=change_sess_path(".");
-		assert(ret>=0);
-		fork_test();
-		//multi process test
+		printf("\n\n\n\t\t\t single process test \n");
+		process_num=1;
+		base_fname="single_process";
 	} else {
 		process_num=rand()%process_max;
+		base_fname="multi_process";
 		printf("\n\n\n\t\t\t multi process test with %d processes\n",process_num);
-		for(i=0;i<process_num;i++){
-			pid=fork();
-			assert(pid>=0);
-			if(pid==0){
-				//srand(i);
-				printf("\t\t\t%d -- changing session path to the current directory:\n",getpid());
-				ret=change_sess_path(".");
-				assert(ret>=0);
-				printf("\t\t\t%d -- functionality test:\n",getpid());
-				func_test(file_max,"multi_process");
-				//we test the behaviour of sessions when we change the session path
-				printf("\n\n\n\t\t\t%d -- session change test\n",getpid());
-				sess_change_test();
-				printf("\n\n\n\t\t\t%d -- fork with opened session test\n",getpid());
-				//we change the session path to the current directory
-				ret=change_sess_path(".");
-				assert(ret>=0);
-				fork_test();
-				exit(0);
-			}
-		}
-		//we wait for all the child processes
-		for(i=0;i<process_num;i++){
-			wait(NULL);
+	}
+	for(i=0;i<process_num;i++){
+		pid=fork();
+		assert(pid>=0);
+		if(pid==0){
+			srand(i);
+			printf("\t\t\t%d -- changing session path to the current directory:\n",getpid());
+			ret=change_sess_path(".");
+			assert(ret>=0);
+			printf("\t\t\t%d -- functionality test:\n",getpid());
+			func_test(file_max,base_fname);
+			//we test the behaviour of sessions when we change the session path
+			printf("\n\n\n\t\t\t%d -- session change test\n",getpid());
+			sess_change_test();
+			printf("\n\n\n\t\t\t%d -- fork with opened session test\n",getpid());
+			//we change the session path to the current directory
+			ret=change_sess_path(".");
+			assert(ret>=0);
+			fork_test();
+			exit(0);
 		}
 	}
-	return 0;
+	//we wait for all the child processes
+	for(i=0;i<process_num;i++){
+		wait(NULL);
+	}
 }

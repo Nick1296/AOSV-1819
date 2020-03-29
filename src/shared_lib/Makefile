@@ -1,5 +1,5 @@
-CCOPTS= -shared -fPIC -Wall -Werror -Wstrict-prototypes
-LIBS=-ldl
+CCOPTS= -shared -fPIC -Wall -Werror -Wstrict-prototypes -ggdb
+LIBS=-ldl -fsanitize=address
 CC=gcc
 
 
