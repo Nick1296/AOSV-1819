@@ -58,7 +58,6 @@ static int __init sessionFS_load(void){
  */
 static void __exit sessionFS_unload(void){
 	release_device();
-	/// \todo find a way to abort the module unload if the device can't be released
 }
 /// Specification of the module init function
 module_init(sessionFS_load);

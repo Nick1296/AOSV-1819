@@ -5,8 +5,6 @@
 ///The module that handles the session information
 #include "session_info.h"
 #include "session_types.h"
-//for spinlocks APIs
-#include <linux/spinlock.h>
 //for container_of
 #include <linux/kernel.h>
 //for get_pid_task
@@ -21,9 +19,6 @@
 
 ///The number of opened sessions
  int sessions_num;
-
-///We set a global lock to make sure that kobjects and attributes are manipulated one at time
-spinlock_t kobj_lock; /// \todo verify if its really necessary
 
 /** \brief The function used to read the SysFS `active_sessions_num` attribute file.
  * \param[in] obj The kobject that has the attribute being read.
@@ -84,8 +79,6 @@ struct kobj_attribute kattr= __ATTR_RO(active_sessions_num);
  int init_info(struct kobject* device_kobj){
 	int res;
 	printk(KERN_DEBUG "SessionFS session info: Initializing the info on the active sessions");
-	//we initialize the spinlock
-	spin_lock_init(&kobj_lock);
 	//we initialize the session_num
 	sessions_num=0;
 	//we create the session_num attribute
@@ -127,9 +120,6 @@ int add_session_info(const char* name,struct sess_info* session){
 	}
 	session->f_name=f_name;
 	printk(KERN_DEBUG "SessionFS session info: formatted filename: %s",f_name);
-	//we get the lock
-	spin_lock(&kobj_lock);
-	//we get the root kobject
 	kobject_get(dev_kobj);
 	//we add the session kobject as a child of the root kobject
 	session->kobj=kobject_create_and_add(f_name,dev_kobj);
@@ -137,7 +127,6 @@ int add_session_info(const char* name,struct sess_info* session){
 		kfree(f_name);
 		session->f_name=NULL;
 		kobject_put(dev_kobj);
-		spin_unlock(&kobj_lock);
 		return -ENOMEM;
 	}
 	printk(KERN_DEBUG "SessionFS session info: folder created, adding info on the active incarnations number");
@@ -149,7 +138,6 @@ int add_session_info(const char* name,struct sess_info* session){
 	session->inc_num_attr.store=NULL;
 	//we add the attribute to the device
 	res=sysfs_create_file(session->kobj,&(session->inc_num_attr.attr));
-	spin_unlock(&kobj_lock);
 	if(res<0){
 		kfree(f_name);
 		session->f_name=NULL;
@@ -165,14 +153,12 @@ int add_session_info(const char* name,struct sess_info* session){
  */
 void remove_session_info(struct sess_info* session){
 	printk(KERN_DEBUG "SessionFS session info: removing info on an original file");
-	spin_lock(&kobj_lock);
 	//we remove the number of incarnations attribute
 	sysfs_remove_file(session->kobj,&(session->inc_num_attr.attr));
 	//we put the root kobject
 	kobject_put(dev_kobj);
 	//we remove the entry from the parent folder
 	kobject_del(session->kobj);
-	spin_unlock(&kobj_lock);
 	kfree(session->f_name);
 }
 
@@ -189,8 +175,6 @@ int add_incarnation_info(struct sess_info* parent_session,struct kobj_attribute*
 	printk(KERN_DEBUG "SessionFS session info: adding info on the incarnation created for process %d",pid);
 //we initialize the attribute name
 scnprintf(name,20,"%d_%d",pid,fdes);
-//we get the lock
-	spin_lock(&kobj_lock);
 	//we increment the global number of sessions
 	sessions_num++;
 	//we increment the number of incarnations for the original file
@@ -208,17 +192,14 @@ scnprintf(name,20,"%d_%d",pid,fdes);
 		kobject_put(parent_session->kobj);
 		sessions_num--;
 		parent_session->inc_num--;
-		spin_unlock(&kobj_lock);
 		return res;
 	}
-	spin_unlock(&kobj_lock);
 	printk(KERN_DEBUG "SessionFS session info: info added successfully");
 	return 0;
 }
 
 void remove_incarnation_info(struct sess_info* parent_session,struct kobj_attribute* incarnation){
 	printk(KERN_DEBUG "SessionFS session info: removing info on an incarnation");
-	spin_lock(&kobj_lock);
 	//we decrement the global number of sessions
 	sessions_num--;
 	//we decrement the number of incarnations for the original file
@@ -229,7 +210,6 @@ void remove_incarnation_info(struct sess_info* parent_session,struct kobj_attrib
 	sysfs_remove_file(parent_session->kobj,&(incarnation->attr));
 	//we put the parent kobject
 	kobject_put(parent_session->kobj);
-	spin_unlock(&kobj_lock);
 	printk(KERN_DEBUG "SessionFS session info: info removed");
 }
 

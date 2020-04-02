@@ -63,6 +63,9 @@ int path_len=0;
 /// Parameter that indicates that the device must not be used since is being removed \todo check if this really needs to be an atomic_t.
 atomic_t device_disabled;
 
+/// Paramters that indicates if the module can has already been locked, to avoid setting a module dependecy multiple times
+atomic_t module_locked;
+
 /// Refcount of the processes that are using the device
 atomic_t refcount;
 
@@ -125,6 +128,29 @@ int path_check(const char* path){
 	return 0;
 }
 
+/** \brief Locks the module, avoiding rmmod while the device is working.
+ * To do so it uses the try_module_get to set a single module dependence.
+ */
+void lock_module(void){
+	if(atomic_read(&module_locked)==0){
+		atomic_add(1,&module_locked);
+		try_module_get(THIS_MODULE);
+	}
+	atomic_add(1,&refcount);
+}
+
+/** \brief Unlocks the module, allowing rmmods.
+ * To do so it uses the module_put to remove the module dependence.
+ */
+void unlock_module(void){
+	atomic_sub(1,&refcount);
+	if(atomic_read(&module_locked)==1 && atomic_read(&refcount)==0 && clean_manager()==0){
+		atomic_sub(1,&module_locked);
+		module_put(THIS_MODULE);
+	}
+}
+
+
 /** \brief Get the path in which sessions are enabled.
  * \param[out] buffer The buffer in which the path is copied.
  * \param[in] buflen The lenght of the supplied buffer.
@@ -136,24 +162,25 @@ int path_check(const char* path){
  */
 static ssize_t device_read(struct file* file, char* buffer,size_t buflen,loff_t* offset){
 	int bytes_not_read=0;
+	lock_module();
 	//we check that the device is not closing
 	if(atomic_read(&device_disabled)==DEVICE_DISABLED){
+		unlock_module();
 		return -ENODEV;
 	}
 	// some basic sanity checks over arguments
 	if(buffer==NULL || buflen<path_len){
+		unlock_module();
 		return -EINVAL;
 	}
-	//we increment the refcount
-	atomic_add(1,&refcount);
+
 	printk(KERN_DEBUG "SessionFS char device: read locking dev_lock for device_read");
 	read_lock(&dev_lock);
 	printk(KERN_DEBUG "SessionFS char device: reading session path\n");
 	bytes_not_read=copy_to_user(buffer,sess_path,path_len);
 	read_unlock(&dev_lock);
 	printk(KERN_DEBUG "SessionFS char device: read releasing dev_lock for device_read");
-	// we decrement the refcount
-	atomic_sub(1,&refcount);
+	unlock_module();
 	if(bytes_not_read>0){
 		return -EAGAIN;
 	}
@@ -172,33 +199,37 @@ static ssize_t device_read(struct file* file, char* buffer,size_t buflen,loff_t*
 static ssize_t device_write(struct file* file,const char* buffer,size_t buflen,loff_t* offset){
 	int bytes_not_written=0;
 	char * tmpbuf;
+	lock_module();
 	//we check that the device is not closing
 	if(atomic_read(&device_disabled)==DEVICE_DISABLED){
+		unlock_module();
 		return -ENODEV;
 	}
 
 	// some basic sanity checks over arguments
 	if(buffer==NULL || buflen>PATH_MAX){
+		unlock_module();
 		return -EINVAL;
 	}
-	//we increment the refcount
-	atomic_add(1,&refcount);
+
 	//we check that the given path is an absolute path (i.e. it starts with '/')
 	tmpbuf=kzalloc(sizeof(char)*PATH_MAX, GFP_KERNEL);
 	if(!tmpbuf){
+		unlock_module();
 		return -ENOMEM;
 	}
 	bytes_not_written=copy_from_user(tmpbuf,buffer,buflen);
 	if(bytes_not_written>0){
 		kfree(tmpbuf);
+		unlock_module();
 		return -EINVAL;
 	}
 	if(tmpbuf[0]!='/'){
 		printk(KERN_WARNING "SessionFS char device: relative path specified, session path must be absolute");
 		kfree(tmpbuf);
+		unlock_module();
 		return -EINVAL;
 	}
-
 
 	printk(KERN_DEBUG "SessionFS char device: write locking dev_lock for device_write");
 	write_lock(&dev_lock);
@@ -209,8 +240,8 @@ static ssize_t device_write(struct file* file,const char* buffer,size_t buflen,l
 	path_len=buflen;
 	write_unlock(&dev_lock);
 	printk(KERN_DEBUG "SessionFS char device: write releasing dev_lock for device_write");
-	atomic_sub(1,&refcount);
 	kfree(tmpbuf);
+	unlock_module();
 	return 0;
 }
 
@@ -245,35 +276,36 @@ static char *sessionfs_devnode(struct device *dev, umode_t *mode)
  */
 long int device_ioctl(struct file * file, unsigned int num, unsigned long param){
 	char* orig_pathname=NULL;
-	int res=0;
-	int flag;
+	int res=0,flag;
 	struct sess_params* p=NULL;
 	struct incarnation* inc=NULL;
 	struct task_struct* task;
 	struct pid* pid;
+
+	lock_module();
 	//we check that the device is not closing
 	if(atomic_read(&device_disabled)==DEVICE_DISABLED){
+		unlock_module();
 		return -ENODEV;
 	}
-	//we increment the refcount
-	atomic_add(1,&refcount);
+
 	p=kzalloc(sizeof(struct sess_params), GFP_KERNEL);
 	if(!p){
-		atomic_sub(1,&refcount);
+		unlock_module();
 		return -ENOMEM;
 	}
 	//get the parameters struct from userspace
 	res=copy_from_user(p,(struct sess_params*)param,sizeof(struct sess_params));
 	if(res>0){
 		kfree(p);
-		atomic_sub(1,&refcount);
+		unlock_module();
 		return -EINVAL;
 	}
 	// allocating space for the original file pathname
 	orig_pathname=kzalloc(sizeof(char)*PATH_MAX, GFP_KERNEL);
 	if(!orig_pathname){
 		kfree(p);
-		atomic_sub(1,&refcount);
+		unlock_module();
 		return -ENOMEM;
 	}
 	printk(KERN_INFO "SessionFS char device: creating a new session");
@@ -282,7 +314,7 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 	if(res>0){
 		kfree(p);
 		kfree(orig_pathname);
-		atomic_sub(1,&refcount);
+		unlock_module();
 		return -EINVAL;
 	}
 
@@ -296,13 +328,13 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 			if(res != PATH_OK){
 				kfree(orig_pathname);
 				kfree(p);
-				atomic_sub(1,&refcount);
+				unlock_module();
 				return -EINVAL;
 			}
 			if(res<0){
 				kfree(orig_pathname);
 				kfree(p);
-				atomic_sub(1,&refcount);
+				unlock_module();
 				return res;
 			}
 			printk(KERN_DEBUG "SessionFS char device: path check ok, checking O_SESS flag presence");
@@ -312,7 +344,7 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 			}else {
 				kfree(orig_pathname);
 				kfree(p);
-				atomic_sub(1,&refcount);
+				unlock_module();
 				return -EINVAL;
 			}
 			printk(KERN_DEBUG "SessionFS char device: flag check ok, creating session");
@@ -322,7 +354,7 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 			if(IS_ERR(inc) || inc==NULL){
 				kfree(p);
 				kfree(orig_pathname);
-				atomic_sub(1,&refcount);
+				unlock_module();
 				return (IS_ERR(inc)) ? PTR_ERR(inc) : -EAGAIN ;
 			}
 			//the validity of the session is set by the status of the incarnation
@@ -335,7 +367,7 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 			kfree(p);
 			printk(KERN_DEBUG "SessionFS char device: bytes not copied to userspace: %d, size of strct sess_params: %ld",res, sizeof(struct sess_params));
 			if(res>0){
-				atomic_sub(1,&refcount);
+				unlock_module();
 				return -EAGAIN;
 			}
 			printk(KERN_INFO "SessionFS char device: session creation successful, session status: %d\n",inc->status);
@@ -351,24 +383,24 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 				//we get the task struct of the user process
 				pid=find_get_pid(p->pid);
 				if(IS_ERR(pid) || pid==NULL){
-					atomic_sub(1,&refcount);
+					unlock_module();
 					return -EPIPE;
 				}
 				task=get_pid_task(pid,PIDTYPE_PID);
 				if(task == NULL || IS_ERR(task)){
-					atomic_sub(1,&refcount);
+					unlock_module();
 					return -EPIPE;
 				}
 				//we send the SIGPIPE
 				res=send_sig(SIGPIPE,task,0);
-				atomic_sub(1,&refcount);
+				unlock_module();
 				return -EPIPE;
 			}
 			kfree(p);
 			printk(KERN_INFO "SessionFS char device: closed incarnation successfully");
 			break;
 	}
-	atomic_sub(1,&refcount);
+	unlock_module();
 	return res;
 }
 
@@ -380,6 +412,8 @@ int init_device(void){
 	atomic_set(&device_disabled,!DEVICE_DISABLED);
 	//we initialize the refcount
 	atomic_set(&refcount,0);
+	//we initialize the refcount
+	atomic_set(&module_locked,0);
 	//we initialize the read-write lock
 	rwlock_init(&dev_lock);
 	// allocate the path buffer and path_len
@@ -396,7 +430,6 @@ int init_device(void){
 	//register the device
 	res=register_chrdev(MAJOR_NUM,DEVICE_NAME,dev_ops);
 	if(res<0){
-		release_manager();
 		printk(KERN_ALERT "SessionFS char device: failed to register the sessionfs virtual device\n");
 		return res;
 	}
@@ -404,7 +437,6 @@ int init_device(void){
 	//register the device class
 	dev_class=class_create(THIS_MODULE,CLASS_NAME);
 	if (IS_ERR(dev_class)){
-		release_manager();
 		unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
 		printk(KERN_ALERT "SessionFS char device: Failed to register device class\n");
 		return PTR_ERR(dev_class);
@@ -415,7 +447,6 @@ int init_device(void){
 	//register the device driver
 	dev = device_create(dev_class, NULL, MKDEV(MAJOR_NUM, 0), NULL, DEVICE_NAME);
 		if(IS_ERR(dev)){
-			release_manager();
 			class_destroy(dev_class);
 			unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
 			printk(KERN_ALERT "SessionFS char device: Failed to create the device\n");
@@ -428,25 +459,13 @@ int init_device(void){
 
 /** Unregister the device, releases the session manager and frees the used memory ( ::dev_ops and ::sess_path)
  */
-int release_device(void){
-	int res;
+void release_device(void){
 	printk(KERN_DEBUG "SessionFS char device: releasing the device resources");
 	//we flag the device as disabled
 	atomic_set(&device_disabled,DEVICE_DISABLED);
-	//we wait until the refcount drops to 0
-	if(atomic_read(&refcount)!=0){
-		printk(KERN_WARNING "SessionFS char device: device in use, can't release it");
-		return -EAGAIN;
-	};
 	printk(KERN_DEBUG "SessionFS char device: requesting session manager release");
-	res=release_manager();
+	clean_manager();
 	//we check if there are active incarnations
-	if(res<0){
-		printk(KERN_WARNING "SessionFS char device: session manager found %d active sessions, aborting device release",get_sessions_num());
-		//we re-enable the device if we have some sessions that are not closed
-		atomic_set(&device_disabled,!DEVICE_DISABLED);
-		return -EAGAIN;
-	}
 	printk(KERN_INFO "SessionFS char device: unregistering device and freeing used memory");
 	//remove the info on sessions
 	release_info();
@@ -459,5 +478,4 @@ int release_device(void){
 	kfree(sess_path);
 	kfree(dev_ops);
 	printk("SessionFS char device: device release complete");
-	return 0;
 }

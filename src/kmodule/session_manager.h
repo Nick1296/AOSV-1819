@@ -16,8 +16,10 @@
  */
 int init_manager(void);
 
-/// \brief Releases the resources of the manager and terminates all the sessions.
-int release_manager(void);
+/** \brief Releases all the incarnations that are associated with a dead/zombie pid.
+ * \returns the number of sessions associated with an active pid.
+*/
+int clean_manager(void);
 
 /** \brief Create a new session for the specified file.
  * \param[in] pathname The pathname of the file in which the session will be created.

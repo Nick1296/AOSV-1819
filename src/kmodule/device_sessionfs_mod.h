@@ -18,8 +18,6 @@ extern struct file_operations* dev_ops;
  */
 int init_device(void);
 
-/** \brief Releases the device and frees the used memory.
- * \returns 0 on success or an error code
- */
-int release_device(void);
+/// \brief Releases the device and frees the used memory.
+void release_device(void);
 #endif

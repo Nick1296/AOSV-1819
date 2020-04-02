@@ -538,4 +538,6 @@ int main(int argc, char** argv){
 	for(i=0;i<process_num;i++){
 		wait(NULL);
 	}
+	///If the last process using the module opens a session and exits the module will remain locked until someones issues a new operation
+	get_sess_path(NULL,0);
 }
