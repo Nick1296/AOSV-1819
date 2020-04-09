@@ -1,3 +1,10 @@
+/** \file userspace_test.c
+ * \brief Userpsace program that will test the kernel module using the libsessionfs.c shared library.
+ *
+ * It will "simulate" a general use-case in which the module can be used, by operating on a pseudorandom number of files
+ * with a pseudorandom number of processes.
+ */
+
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -9,22 +16,28 @@
 
 #include "../shared_lib/libsessionfs.h"
 
-/** \breif Use libsessionfs APIs to change the session path to ::path.
+///Permissions to be used when calling `open()`
+#define DEFAULT_PERM 0644
+
+/** \brief Use libsessionfs APIs to change the session path to `path`.
  * \param[in] path The path in which the session path should be changed.
- * \returns 0 or -1 in case of error. (errno is set by libsessionfs functions).
+ * \returns 0 or -1 in case of error. (`errno` is set by libsessionfs functions).
+ *
+ * This utility function uses `get_sess_path()` and `write_sess_path()` to read the current session path, change it and
+ * display the results to the user, testing the session path change feature.
  */
 int change_sess_path(char* path){
 	int ret;
 	char *buf=malloc(sizeof(char)*PATH_MAX);
 	if(buf==NULL){
-		perror("Can't allocate buffer to store session parh");
+		perror("error: Can't allocate buffer to store session parh");
 		return -1;
 	}
 	memset(buf,0,PATH_MAX);
 	printf("reading current session path...\n");
 	ret=get_sess_path(buf,PATH_MAX);
 	if(ret<0){
-		perror("can't get session path");
+		perror("error: can't get session path");
 		free(buf);
 		return ret;
 	}
@@ -33,7 +46,7 @@ int change_sess_path(char* path){
 	ret=write_sess_path(path);
 	if(ret<0){
 		free(buf);
-		perror("can't change session path");
+		perror("error: can't change session path");
 		return ret;
 	}
 	printf("re-reading to check if the change has been made successfully\n");
@@ -41,7 +54,7 @@ int change_sess_path(char* path){
 	ret=get_sess_path(buf,PATH_MAX);
 	if(ret<0){
 		free(buf);
-		perror("can't get session path");
+		perror("error: can't get session path");
 		return ret;
 	}
 	printf("new session path: %s\n",buf);
@@ -52,22 +65,26 @@ int change_sess_path(char* path){
 
 /** \brief A general functionality test.
  * \param[in] files_max The number of files to be used during the test.
- * We will test that all the features of the module are functional by simulating the common usage pattern that a single
- * process could have, for a random number of files that goest from 0 to ::files_max.
- * In detail we execute the folliwing operations for each file:
- *  * read the active_sessions_num pseudofile;
- *  * open the file with the ::O_SESS flag;
- *  * we check active_sessions_num;
- *  * we read active_incarnations_num for the current file and the file with our pid for each session we have created to ensure that they return meaningful values;
- *  * we test write, read and lseek writing a random number of bytes from 0 to 1MB, by writing the pid serveral times:
+ * \param[in] base_fname The string used to begin the filename of all the used files.
+ *
+ * This function will test that all the features of the module are functional by simulating the common usage pattern that a single
+ * process could have, for a random number of files that goes from 0 to `files_max`.
+ * In detail we execute the following operations for each file:
+ *  * read the `active_sessions_num` pseudofile;
+ *  * we can sleep at random for 1 second, to give the other process, if any, a chance to override the incarnation;
+ *  * open the file with the `::O_SESS` flag;
+ *  * we check `active_sessions_num` pseudofile;
+ *  * we read `active_incarnations_num` for the current file and the file with our pid for each session we have created to ensure that they return meaningful values;
+ *  * we test `write`, `read` and `lseek` writing a random number of bytes from 0 to 1MB, by writing the pid serveral times:
+ *    - before writing we decide at random is we start writing from the beginning or we appen our content to the end of the file, to have a chance to see different pids in the original file;
  *    - we write the process pid;
- *    - we seek back to where we hae written the last pid;
+ *    - we seek back to where we have written the last pid;
  *    - we read what we have written;
  *    - we check that there aren't mismatches;
  *  * we seek to the begining, middle and end of the file;
- *  * we sleep for 60 seconds at random, to have some files born from the same incarnation in the concurrent test;
- *  * we close the opened  file;
- *  * we check active_sessions_num;
+ *  * we sleep for 1 second at random, to have some files born from the same incarnation in the concurrent test;
+ *  * we can close the opened file or leave it open at random to test how the module handles session with a dead owner;
+ *  * we check `active_sessions_num` pseudofile;
  */
 void func_test(int files_max,char* base_fname){
 	int ret,*fd=NULL,sess_num_fd,inc_num_fd,proc_name_fd,i,file_i,file_num=0,content_size,written,dummy_content_len,pid;
@@ -91,8 +108,6 @@ void func_test(int files_max,char* base_fname){
 	buf2=malloc(sizeof(char)*PATH_MAX);
 	assert(buf!=NULL && buf2!=NULL && fnames!=NULL && dummy_content!=NULL && err_buf!=NULL && fd!=NULL);
 
-
-
 	memset(fd,-1,sizeof(int)*file_num);
 	//we initialize the dummy content
 	memset(dummy_content,0,sizeof(char)*20);
@@ -111,7 +126,7 @@ void func_test(int files_max,char* base_fname){
 		sess_num_fd=open("/sys/devices/virtual/SessionFS_class/SessionFS_dev/active_sessions_num", O_RDONLY);
 		if(sess_num_fd<0){
 			memset(err_buf,0,sizeof(char)*1024);
-			snprintf(err_buf,1024,"%d: can't open active_sessions_num file",pid);
+			snprintf(err_buf,1024,"%d: error: can't open active_sessions_num file",pid);
 			perror(err_buf);
 		}
 		assert(sess_num_fd>0);
@@ -123,10 +138,10 @@ void func_test(int files_max,char* base_fname){
 
 		// we open a file with the O_SESS flag
 		if(rand()%2){
-			printf("sleeping for 10 seconds before opening the file");
-			sleep(10);
+			printf("sleeping for 1 second before opening the file");
+			sleep(1);
 		}
-		ret=open(fnames[file_i], O_CREAT | O_SESS | O_RDWR);
+		ret=open(fnames[file_i], O_CREAT | O_SESS | O_RDWR,DEFAULT_PERM);
 		fd[file_i]=ret;
 		if(ret<0){
 			memset(err_buf,0,sizeof(char)*1024);
@@ -140,7 +155,7 @@ void func_test(int files_max,char* base_fname){
 		sess_num_fd=open("/sys/devices/virtual/SessionFS_class/SessionFS_dev/active_sessions_num", O_RDONLY);
 		if(sess_num_fd<0){
 			memset(err_buf,0,sizeof(char)*1024);
-			snprintf(err_buf,1024,"%d: can't open active_sessions_num file",pid);
+			snprintf(err_buf,1024,"%d: error: can't open active_sessions_num file",pid);
 			perror(err_buf);
 		}
 		memset(buf,0,sizeof(char)*PATH_MAX);
@@ -161,7 +176,7 @@ void func_test(int files_max,char* base_fname){
 		inc_num_fd=open(buf,O_RDONLY);
 		if(inc_num_fd<0){
 			memset(err_buf,0,sizeof(char)*1024);
-			snprintf(err_buf,1024,"%d: can't open active active_incarnations_num file for file %s",pid,fnames[file_i]);
+			snprintf(err_buf,1024,"%d: error: can't open active active_incarnations_num file for file %s",pid,fnames[file_i]);
 			perror(err_buf);
 		}
 		assert(inc_num_fd>0);
@@ -186,7 +201,7 @@ void func_test(int files_max,char* base_fname){
 		proc_name_fd=open(buf,O_RDONLY);
 		if(proc_name_fd<0){
 			memset(err_buf,0,sizeof(char)*1024);
-			snprintf(err_buf,1024,"%d: can't open pid file, for file %s",pid,fnames[file_i]);
+			snprintf(err_buf,1024,"%d: error: can't open pid file, for file %s",pid,fnames[file_i]);
 			perror(err_buf);
 		}
 		assert(proc_name_fd>0);
@@ -210,7 +225,7 @@ void func_test(int files_max,char* base_fname){
 			ret=lseek(fd[file_i],0,SEEK_END);
 			if(ret<0){
 				memset(err_buf,0,sizeof(char)*1024);
-				snprintf(err_buf,1024,"%d: can't seeek at the and of the file %s",pid,fnames[file_i]);
+				snprintf(err_buf,1024,"%d: error: can't seeek at the and of the file %s",pid,fnames[file_i]);
 				perror(err_buf);
 			}
 		}else {
@@ -222,7 +237,7 @@ void func_test(int files_max,char* base_fname){
 			ret=write(fd[file_i],dummy_content,dummy_content_len);
 			if(ret<dummy_content_len){
 				memset(err_buf,0,sizeof(char)*1024);
-				snprintf(err_buf,1024,"%d: can't write the pid on file %s",pid,fnames[file_i]);
+				snprintf(err_buf,1024,"%d: error: can't write the pid on file %s",pid,fnames[file_i]);
 				perror(err_buf);
 			}
 			assert(ret>=dummy_content_len);
@@ -265,15 +280,15 @@ void func_test(int files_max,char* base_fname){
 		if(rand()%2){
 			//we determine if we need to close the file now randomically (so when we are in concurency some files are bound to be born from the same incarnation)
 			if(rand()%2){
-				printf("%d: sleeping for 10 seconds before closing file: %s\n",pid,fnames[file_i]);
-				sleep(10);
+				printf("%d: sleeping for 1 second before closing file: %s\n",pid,fnames[file_i]);
+				sleep(1);
 			}
 			// we try to close the opened session
 			printf("%d: closing the file: %s\n",pid,fnames[file_i]);
 			ret=close(fd[file_i]);
 			if(ret<0){
 				memset(err_buf,0,sizeof(char)*1024);
-				snprintf(err_buf,1024,"%d: can't close incarnation of %s\n",pid,fnames[file_i]);
+				snprintf(err_buf,1024,"%d: error: can't close incarnation of %s\n",pid,fnames[file_i]);
 				perror(err_buf);
 			}
 			assert(ret>=0);
@@ -286,7 +301,7 @@ void func_test(int files_max,char* base_fname){
 		sess_num_fd=open("/sys/devices/virtual/SessionFS_class/SessionFS_dev/active_sessions_num", O_RDONLY);
 		if(sess_num_fd<0){
 			memset(err_buf,0,sizeof(char)*1024);
-			snprintf(err_buf,1024,"%d can't open active_sessions_num file",pid);
+			snprintf(err_buf,1024,"%d error: can't open active_sessions_num file",pid);
 			perror(err_buf);
 		}
 		memset(buf,0,sizeof(char)*PATH_MAX);
@@ -305,9 +320,11 @@ void func_test(int files_max,char* base_fname){
 }
 
 /** \brief Test the semantic of sessions when the session path has changed.
- * We change the session path to '/home', then we open a file with ::O_SESS, in the current folder.
- * Afterwards we change the session path to '/mnt' and we open a file with ::O_SESS again in the current folder.
+ *
+ * We change the session path to the current directory, then we open a file with `::O_SESS`, in the current directory.
+ * Afterwards we change the session path to `/mnt` and we open a file with `::O_SESS` again in the current directory.
  * Then we close both files.
+ * The filename of the files created starts with the `sess_change_test` string.
  */
 void sess_change_test(void){
 	int f1,f2,ret,pid;
@@ -316,14 +333,14 @@ void sess_change_test(void){
 	ret=change_sess_path(".");
 	assert(ret>=0);
 	printf("%d: opening a file with O_SESS in the current directory\n",pid);
-	ret=open("sess_change_test1.txt", O_CREAT | O_SESS | O_RDWR);
+	ret=open("sess_change_test1.txt", O_CREAT | O_SESS | O_RDWR,DEFAULT_PERM);
 	if(ret<0){
 		perror("error during opening the file with O_SESS");
 	}
 	f1=ret;
 	printf("%d:changing session path to '/mnt' and trying to open another file with O_SESS in the same position as before\n",pid);
 	ret=change_sess_path("/mnt");
-	ret=open("sess_change_test2.txt", O_CREAT | O_SESS | O_RDWR);
+	ret=open("sess_change_test2.txt", O_CREAT | O_SESS | O_RDWR, DEFAULT_PERM);
 	if(ret<0){
 		perror("error during opening the file with O_SESS not in the current session path");
 	}
@@ -333,8 +350,11 @@ void sess_change_test(void){
 	ret=close(f2);
 }
 
-/** \brief Test file semantic with a session opened when forking
- * We open a file with session semantic then we fork and read and write on this file with both child and father processes.
+/** \brief Test file semantic with a session opened when forking.
+ *
+ * We open a file called `fork_test.txt` with session semantic then we execute the write test without appending done in `func_test()` on this file with both child and father processes.
+ * This is done to see if using session preserves the original semantic of the `read`, `write` and `llseek` functions.
+ * We can expect that one of the two processes will fail in closing the file, since they have an intentional race condition on closing.
  */
 void fork_test(void){
 	int fd,sess_num_fd,inc_num_fd,pid,ret,proc_name_fd,content_size,dummy_content_len,written,i,pid_o;
@@ -351,7 +371,7 @@ void fork_test(void){
 	sess_num_fd=open("/sys/devices/virtual/SessionFS_class/SessionFS_dev/active_sessions_num", O_RDONLY);
 	if(sess_num_fd<0){
 		memset(err_buf,0,sizeof(char)*1024);
-		snprintf(err_buf,1024,"%d: can't open active_sessions_num file",pid);
+		snprintf(err_buf,1024,"%d: error: can't open active_sessions_num file",pid);
 		perror(err_buf);
 	}
 	assert(sess_num_fd>0);
@@ -362,7 +382,7 @@ void fork_test(void){
 	close(sess_num_fd);
 
 	// we open a file with the O_SESS flag
-	ret=open("fork_test.txt", O_CREAT | O_SESS | O_RDWR);
+	ret=open("fork_test.txt", O_CREAT | O_SESS | O_RDWR, DEFAULT_PERM);
 	fd=ret;
 	if(ret<0){
 		memset(err_buf,0,sizeof(char)*1024);
@@ -386,7 +406,7 @@ void fork_test(void){
 	sess_num_fd=open("/sys/devices/virtual/SessionFS_class/SessionFS_dev/active_sessions_num", O_RDONLY);
 	if(sess_num_fd<0){
 		memset(err_buf,0,sizeof(char)*1024);
-		snprintf(err_buf,1024,"%d: can't open active_sessions_num file",pid_o);
+		snprintf(err_buf,1024,"%d: error: can't open active_sessions_num file",pid_o);
 		perror(err_buf);
 	}
 	memset(buf,0,sizeof(char)*PATH_MAX);
@@ -406,7 +426,7 @@ void fork_test(void){
 	inc_num_fd=open(buf,O_RDONLY);
 	if(inc_num_fd<0){
 		memset(err_buf,0,sizeof(char)*1024);
-		snprintf(err_buf,1024,"%d: can't open active active_incarnations_num file for file %s",pid_o,"fork_test.txt");
+		snprintf(err_buf,1024,"%d: error: can't open active active_incarnations_num file for file %s",pid_o,"fork_test.txt");
 		perror(err_buf);
 	}
 
@@ -430,7 +450,7 @@ void fork_test(void){
 	proc_name_fd=open(buf,O_RDONLY);
 	if(proc_name_fd<0){
 		memset(err_buf,0,sizeof(char)*1024);
-		snprintf(err_buf,1024,"%d: can't open pid file, for file %s",pid_o,"fork_test.txt");
+		snprintf(err_buf,1024,"%d: error: can't open pid file, for file %s",pid_o,"fork_test.txt");
 		perror(err_buf);
 	}
 
@@ -451,7 +471,7 @@ void fork_test(void){
 		ret=write(fd,dummy_content,dummy_content_len);
 		if(ret<dummy_content_len){
 			memset(err_buf,0,sizeof(char)*1024);
-			snprintf(err_buf,1024,"%d: can't write the pid on file %s",pid_o,"fork_test.txt");
+			snprintf(err_buf,1024,"%d: error: can't write the pid on file %s",pid_o,"fork_test.txt");
 			perror(err_buf);
 		}
 		written+=ret;
@@ -472,8 +492,8 @@ void fork_test(void){
 	}
 	//we pause one of the two processes to gice the change to the other to write on the file, but only in some cases.
 	if((pid_o+pid)%2){
-		printf("%d: sleeping for 10 seconds\n",pid_o);
-		sleep(10);
+		printf("%d: sleeping for 1 second\n",pid_o);
+		sleep(1);
 	}
 	printf("%d: closing the file\n",pid_o);
 	close(fd);
@@ -489,9 +509,11 @@ void fork_test(void){
 }
 
 /** \brief Testing of the kernel module
- * We change the session path to '/home' then we execute a single-thread test of most of the functionalities, using ::func_test.
- * Then we check that everything works as specified when changing the session path with an opened session.
- * \todo Finally we execute a multi-thread test on most of the functionalities.
+ * \param[in] argc Number of the given arguments, 3 is expected.
+ * \param[in] argv The arguments given to the file; we expect two arguments in this order: the maximum number of processes to be used in the test followed by the maximum number of files to be used by each process.
+ *
+ * We change the session path to the current directory using `change_sess_path()`, then we execute `func_test()`, `sess_change_test()` and `fork_test()` after spawning a number of processes from 1 to the number given as first parameter.
+ * If the maximum number of processes used is 1 then all the files created by `func_test()` have a filename that starts with the `single_process` string, otherwise with the `multi_process` string.
  */
 int main(int argc, char** argv){
 	int ret,file_max=0,process_max=0, process_num,i,pid;
@@ -538,6 +560,11 @@ int main(int argc, char** argv){
 	for(i=0;i<process_num;i++){
 		wait(NULL);
 	}
-	///If the last process using the module opens a session and exits the module will remain locked until someones issues a new operation
-	get_sess_path(NULL,0);
+	///To remove the kernel modult we need to power down the `SessionFS_dev` device
+	printf("requesting device shutdown\n");
+	ret= device_shutdown();
+	if(ret<0){
+		perror("error during device shutdown");
+	}
+	return ret;
 }

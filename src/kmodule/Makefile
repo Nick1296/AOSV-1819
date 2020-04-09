@@ -11,9 +11,7 @@ clean:
 
 #quick test to see if the module is loaded correctly
 insmod: all
-	sudo dmesg -C
 	sudo insmod SessionFS.ko
 
 rmmod:
 	sudo rmmod SessionFS
-	sudo killall dmesg

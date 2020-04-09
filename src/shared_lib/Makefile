@@ -1,5 +1,10 @@
-CCOPTS= -shared -fPIC -Wall -Werror -Wstrict-prototypes -ggdb
-LIBS=-ldl -fsanitize=address
+# enables warnings, Position Independent Code
+CCOPTS= -shared -fPIC -Wall -Werror -Wstrict-prototypes
+#enables gdb debug options
+CCOPTS-DBG= -ggdb
+LIBS=-ldl
+# enables ASAN
+TEST-OPT= -fsanitize=address
 CC=gcc
 
 
@@ -16,6 +21,9 @@ all:	$(BINS)
 
 libsessionfs: $(OBJS)
 		$(CC) $(CCOPTS)  -o libsessionfs.so $(OBJS) $(LIBS)
+
+libsessionfs-d: $(OBJS)
+		$(CC) $(CCOPTS) $(CCOPTS-DBG)  -o libsessionfs.so $(OBJS) $(LIBS) $(TEST-OPT)
 
 clean:
 	rm -rf *.so *.o *~  $(BINS)

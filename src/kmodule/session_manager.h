@@ -1,5 +1,6 @@
 /** \file session_manager.h
- * \brief APIs used to interact with the session manger.
+ * \brief APIs used to interact with the session manger, component of the _Session Manager_ submodule.
+ *
  * This file contains the APIs of the session manager, which are used to initialize and release the manager and to add
  * and remove sessions.
  */
@@ -11,7 +12,7 @@
 ///The structs that represent sessions, incarnation and their informations.
 #include "session_types.h"
 
-/** \brief Initialization of the session manager data structures
+/** \brief Initialization of the session manager data structures.
  * \returns 0 on success or an error code.
  */
 int init_manager(void);
@@ -24,17 +25,17 @@ int clean_manager(void);
 /** \brief Create a new session for the specified file.
  * \param[in] pathname The pathname of the file in which the session will be created.
  * \param[in] flags The flags that specify the permissions on the file.
- * \param[in] ppid The pid of the process that wants to create the session.
+ * \param[in] pid The pid of the process that wants to create the session.
+ * \param[in] mode The permissions to apply to newly created files.
  * \returns a pointer to an ::incarnation object, containing all the info on the current incarnation or an error code.
  */
-struct incarnation* create_session(const char* pathname, int flags, pid_t pid);
+struct incarnation* create_session(const char* pathname, int flags, pid_t pid, mode_t mode);
 
 /** \brief Closes a session.
  * \param[in] pathname the pathname for the session containing the incarnation that is being closed.
  * \param[in] fdes The file descriptor of a session incarnation.
  * \param[in] pid The owner process pid.
  * \return 0 on success or an error code.
- * \todo handle tha absence of the `O_WRITE` flag when closing.
  */
 int close_session(const char* pathname, int fdes, pid_t pid);
 #endif

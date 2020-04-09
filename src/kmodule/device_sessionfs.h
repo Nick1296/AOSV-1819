@@ -1,5 +1,6 @@
 /** \file
- * \brief Properties of the devices necessary for the device implementation and the library that uses the device.
+ * \brief Properties of the devices necessary for the device implementation and the library that uses the device, component of the _Character Device_ submodule.
+ *
  * This file contains some general device properties, such as the available ioctls and the device name that are needed to
  * the file that will implement the device and to the library the will use the ioctls.
  */
@@ -27,37 +28,55 @@
 /// The ioctl sequence number that idenfies the closing of a session.
 #define IOCTL_SEQ_CLOSE 1
 
-///The `O_SESS` flag, which will enable session semantic if used with a compliant path
-#define O_SESS 00000004
+/// The ioctl sequence number that idenfies the request for the device shutdown.
+#define IOCTL_SEQ_SHUTDOWN 10
+
+/** \brief Flag used to enable the Unix session semantic.
+ *
+ *  Unused flag in `include/uapi/asm-generic/fcntl.h`, that has been repurposed.
+ */
+#define O_SESS 10000000
 
 
 ///Defines the validity of a session
 #define VALID_SESS 0
+
 /**
  * \struct sess_params
- * \param orig_path The pathname of the original file to be opened in a session, or that represents an incarnation to be closed.
+ * \param orig_path The pathname of the original file to be opened in a session, or that represents the original file containing the incarnation to be closed.
  * \param flags The flags used to determine the incarnation permissions.
+ * \param mode The permissions to apply to newly created files.
  * \param pid The pid of the process that requests the creation of an incarnation.
  * \param filedes The file descriptor of the incarnation.
  * \param valid The session can be invalid if there was an error in the copying of the original file over the incarnation file, so the value of this parameter can be < VALID_SESS.
- * We define a struct that will hold the pathanme and flags that determine the behaviour of the session opening.
+ *
+ * This struct will hold all the necessary parameters used to open and close sessions.
 */
 struct sess_params{
 	const char* orig_path;
 	int flags;
+	mode_t mode;
 	pid_t pid;
 	int filedes;
 	int valid;
 };
 
-/** We define the ioctl command for opening a session.
- * We use the ::_IOW macro since we need to pass to the virtual device the pathname and the flags that control the session.
+/** \brief We define the ioctl command for opening a session.
+ *
+ * We use the `_IOWR` macro since we need to pass to the virtual device the `::sess_params` struct.
  */
-#define IOCTL_OPEN_SESSION _IOW(MAJOR_NUM,IOCTL_SEQ_OPEN,struct open_params*)
+#define IOCTL_OPEN_SESSION _IOWR(MAJOR_NUM,IOCTL_SEQ_OPEN,struct sess_params*)
 
-/** We define the ioctl command for closing a session.
- * We use the macro ::_IOW since we need to pass to the file descriptor of the file we want to commit to the virtual device.
+/** \brief We define the ioctl command for closing a session.
+ *
+ * We use the macro `_IOWR` since we need to pass to the virtual device the `sess_params` struct.
  */
-#define IOCTL_CLOSE_SESSION _IOW(MAJOR_NUM,IOCTL_CLOSE_SESSION,int)
+#define IOCTL_CLOSE_SESSION _IOWR(MAJOR_NUM,IOCTL_SEQ_CLOSE,struct sess_params*)
+
+/** \brief We define the ioctl command fot asking a device shutdown
+ *
+ * We use the `_IOR` macro since the device will let the userspace program read the number of active sessions during shutdown.
+ */
+#define IOCTL_DEVICE_SHUTDOWN _IOR(MAJOR_NUM,IOCTL_SEQ_SHUTDOWN,int*)
 
 #endif
