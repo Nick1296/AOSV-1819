@@ -1,7 +1,7 @@
 /** \file session_manager.c
  * \brief Implementation of the _Session Manager_ submodule.
  *
- * This file contains the implementation of the session manager, which will handle the creation and deletion of a session
+ * This file contains the implementation of the session manager, which will handle the creation and deletion of a session,
  * keeping track of the opened sessions for each file.
  */
 
@@ -44,7 +44,7 @@
 /// Used to toggle the necessity of a file descriptor in `open_file()` and to determine the type of search in `search_session()`.
 #define NO_FD 0
 
-/// Used to determinethe type of search in `search_session()`.
+/// Used to determine the type of search in `search_session()`.
 #define NO_PID 0
 
 ///Permissions to be given to the newly created files.
@@ -61,9 +61,6 @@
 
 ///Used to determine is the session manager contains active sessions.
 #define MANAGER_EMPTY 0
-
-///Return value of pid_alive (in `linux/sched.h`) if the process is still alive
-#define ALIVE 1
 
 ///List of the active `::session`(s).
 struct list_head sessions;
@@ -94,6 +91,7 @@ int open_file(const char* pathname, int flags, mode_t mode,int fd_needed, struct
 		perms=mode;
 	}
 	printk(KERN_DEBUG "SessionFS session manager: opening (and creating it if needed): %s",pathname);
+	//we don't want to be preempted while opening the file
 	//we try to open the file
 	f=filp_open(pathname,flags,perms);
 	if (IS_ERR(f)) {
@@ -127,7 +125,10 @@ int open_file(const char* pathname, int flags, mode_t mode,int fd_needed, struct
  * Searches, by navigating the `::sessions` rcu list, a `::session` which matches the given `pathname`.
  * If `pathname` is NULL, `filedes` is differrent from `::NO_FD` and `pid` is differrent from `::NO_PID`
  * then it searches for the session that contains an incarnation with the corresponding pid an file descriptor.
- * while walking the `::sessions` list the reference counter counter of any session currently inspeced, `refcount`, will be incremented, to minimize the possibility of returning an invalid session. If the session is not the one we are looking for then `refcount` will be decremented before inspecting the next `::session`. If a `::session` is invalid it will be skipped.
+ * While walking the `::sessions` list the reference counter counter of any session currently inspected, `refcount`, will be incremented.
+ * If the session is not the one we are looking for then `refcount` will be decremented before inspecting the next `::session`.
+ * If a `::session` is invalid it will be skipped.
+ *
  * Additionally while walking the `::incarnation` list of a `::session` we grab the `sess_lock` in read mode, to avoid
  * that a concurrent process modifies the list while we are walking it. When we finish walking the list we will release the lock.
  */
@@ -154,7 +155,7 @@ struct session* search_session(const char* pathname,int filedes, pid_t pid){
 		session_it=session_rcu_it->session;
 		//we increment the refcount
 		atomic_add(1,&(session_it->refcount));
-		if(session_it->valid==VALID_NODE){
+		if(atomic_read(&(session_it->valid))==VALID_NODE){
 			if(pathname!=NULL && strcmp(session_it->pathname,pathname) == 0){
 				printk(KERN_DEBUG "SessionFS session manager: found session by pathname");
 				found=session_it;
@@ -187,25 +188,51 @@ struct session* search_session(const char* pathname,int filedes, pid_t pid){
 /** \brief Deallocates the given session object.
  * \param[in] session The session object to deallocate.
  *
- * This function is used to free the memory used by the session when nobody is accessing it, this is checked sing the `::session` `refcount` member.
- * The method will attempt to deallocate the session object, if the refcount is 0 (only the current process is using it).
+ * This function is used to free the memory used by the session when nobody is accessing it, this is checked using the `::session` `refcount` and the `::session` kernel object refcount, in the `info` member.
+ *
+ * The method will attempt to deallocate the session object, with all its incarnations, if the `::session` `refcount` is 0 and the associated kernel object refcount is 1 (only the current process is using it).
  * Otherwise the method will do nothing.
  *
- * If the `::session` object is going to be deallocated SysFS is updated with `remove_session_info()`.
  */
 void delete_session(struct session* session){
+	struct llist_node *lnode;
+	struct incarnation *it=NULL, *it_tmp=NULL;
 	printk(KERN_DEBUG "SessionFS session manager: checking is someone is using the session object");
-	if(atomic_read(&(session->refcount))>0){
-		printk(KERN_WARNING "SessionFS session manager: session in use, cannot eliminate the object");
+	if(atomic_read(&(session->refcount))>0 || kref_read(&(session->info.kobj->kref))>1){
+		printk(KERN_WARNING "SessionFS session manager: session in use: recount %d kobject refcount :%d , cannot eliminate the object",atomic_read(&(session->refcount)),kref_read(&(session->info.kobj->kref)));
 	} else {
 		printk(KERN_INFO "SessionFS session manager: session object not in use, proceeding with elimination");
-		remove_session_info(&(session->info));
+
+		//we close the session file
 		filp_close(session->file,NULL);
+		//we free all tne elements of the incarnations llist
+		lnode=llist_del_all(&(session->incarnations));
+		llist_for_each_entry_safe(it,it_tmp,lnode,node){
+			kfree(it->pathname);
+			kfree(it->inc_attr.attr.name);
+			kfree(it);
+		}
+
+		//we deallocate the filename used by SysFS
+		kfree(session->info.f_name);
+		//we deallocatethe pathname string
 		kfree(session->pathname);
-		session->file=NULL;
-		session->pathname=NULL;
+		//finally we deallocate the session
 		kfree(session);
 	}
+}
+
+/** \brief Deallocates a `::session_rcu` element
+ * \param[in] head The `rcu_head` struct contained inside the `::session_rcu` to deallcoate.
+ *
+ * Used to deallocate the `::session_rcu` element after it has been removed from the `::sessions` list.
+ *
+ * __DO NOT__ directly call this function, instead you should let this function be called by `call_rcu()` when nobody is accessing anymore this element.
+ */
+void delete_session_rcu(struct rcu_head* head){
+	struct session_rcu* session_rcu=container_of(head,struct session_rcu,rcu_head);
+	printk(KERN_DEBUG "SessionFS session manager: deleting unused session_rcu");
+	kfree(session_rcu);
 }
 
 /**
@@ -214,13 +241,16 @@ void delete_session(struct session* session){
  * \param[in] flags The flags that regulate the access to the original file.
  * \param[in] mode The permissions to apply to newly created files.
  *
- * To create a new `::session` object we get the spinlock `::sess_lock` to avoid race coditions while creating the `::session`.
- * Then a search is issued,useing `search_session()`, to see if there is already a matching session with the same `pathname` to be returned.
- * If the search gives an invalid object or `NULL` we proceed in the session creation, calling `add_session_info()`,
- * opening the file, using `open_file()`, creating the object and adding it in the `::sessions` list and finally we release the spinlock.
+ * To create a new `::session` object we open the matching file using `open_file()`, then we get the spinlock
+ * `::sessions_lock` to avoid race coditions and a search is issued, using `search_session()`, to see if there is already
+ * a matching session with the same `pathname` to be returned.
+ *
+ * If the search gives an invalid object or `NULL` we proceed in the session creation, creating and adding the `::session`
+ * object in the `::sessions` list and calling `add_session_info()`.
+ * Finally we release the spinlock.
+ *
  * The original flags will be modified by removing the `O_RDONLY` and `O_WRONLY` in favor of `O_RDWR`, since we will always
- * read and write on this file.
- * With the specified flags we preserve the semantic of the `O_EXCL` flag.
+ * read and write on this file. In this way we preserve the effects of the `O_EXCL` flag if specified from userspace.
  */
 struct session* init_session(const char* pathname,int flags, mode_t mode){
 	struct file* file=NULL;
@@ -241,6 +271,16 @@ struct session* init_session(const char* pathname,int flags, mode_t mode){
 		return ERR_PTR(-ENOMEM);
 	}
 	printk(KERN_DEBUG "SessionFS session manager: successfully allocated necessary memory");
+
+	//we need to open the original file always with both read and write permissions.
+	flag=(((flags & ~O_RDONLY) & ~O_WRONLY) | O_RDWR);
+	fd=open_file(pathname,flag,mode,NO_FD,&file);
+	if(fd < 0){
+		kfree(node);
+		kfree(node_rcu);
+		return ERR_PTR(fd);
+	}
+	printk(KERN_DEBUG "SessionFS session manager: original file opened successfully, populating session object");
 	//we get the spinlock to avoid race conditions while creating the session object
 	spin_lock(&sessions_lock);
 	printk(KERN_DEBUG "SessionFS session manager: checking for an already existing session with the same pathname: %s",pathname);
@@ -248,34 +288,20 @@ struct session* init_session(const char* pathname,int flags, mode_t mode){
 	node_f=search_session(pathname,NO_FD,NO_FD);
 	if(node_f!=NULL){
 		printk(KERN_DEBUG "SessionFS session manager: found an already existing session");
-		if(node_f->valid!=VALID_NODE){
+		if(atomic_read(&(node_f->valid))!=VALID_NODE){
 			printk(KERN_DEBUG "SessionFS: session manager: Found session is invalid, continuing with creation");
 			atomic_sub(1,&(node_f->refcount));
 			delete_session(node_f);
 		}
-		//we return the found session;
 		spin_unlock(&sessions_lock);
+		//we close the opened file, since we have already a reference on it
+		filp_close(file,NULL);
+		kfree(node);
+		kfree(node_rcu);
+		//we return the found session;
 		return node_f;
 	}
-	//we update the info on the device kobject
-	res=add_session_info(pathname,&(node->info));
-	if(res<0){
-		kfree(node);
-		kfree(node_rcu);
-		spin_unlock(&sessions_lock);
-		return ERR_PTR(res);
-	}
-	//we need to open the original file always with both read and write permissions.
-	flag=(((flags & ~O_RDONLY) & ~O_WRONLY) | O_RDWR);
-	fd=open_file(pathname,flag,mode,NO_FD,&file);
-	if(fd < 0){
-		remove_session_info(&(node->info));
-		kfree(node);
-		kfree(node_rcu);
-		spin_lock(&sessions_lock);
-		return ERR_PTR(fd);
-	}
-	printk(KERN_DEBUG "SessionFS session manager: original file opened successfully, populating session object");
+
 	//we link the session_rcu and the session structs
 	node_rcu->session=node;
 	//we fill the session object
@@ -287,24 +313,31 @@ struct session* init_session(const char* pathname,int flags, mode_t mode){
 	atomic_set(&(node->refcount),1);
 	node->incarnations.first=NULL;
 	//we flag the session as valid
-	node->valid=VALID_NODE;
+	atomic_set(&(node->valid),VALID_NODE);
 	printk(KERN_DEBUG "SessionFS session manager: adding session object to the rculist");
 	// we insert the new session in the rcu list
 	list_add_rcu(&(node_rcu->list_node),&sessions);
 	//we release the spinlock
 	spin_unlock(&sessions_lock);
+	//we update the info on the device kobject
+	res=add_session_info(pathname,&(node->info));
+	if(res<0){
+		atomic_set(&(node->valid),!VALID_NODE);
+		//we get the spinlock over the session list, to avoid running concurrently with another list modification primitive
+		spin_lock(&sessions_lock);
+		list_del_rcu(&(node_rcu->list_node));
+		//we release the spinlock
+		spin_unlock(&sessions_lock);
+		//we register a callback to free the memory associated to the session
+		printk(KERN_DEBUG "SessionFS session manager: registering callback to deallocate the session_rcu object");
+		call_rcu(&(node_rcu->rcu_head),delete_session_rcu);
+		filp_close(file,NULL);
+		if(atomic_read(&(node->refcount))==1){
+			kfree(node);
+		}
+		return ERR_PTR(res);
+	}
 	return node;
-}
-
-/** \brief Deallocates a `::session_rcu` element
- * \param[in] head The `rcu_head` struct contained inside the `::session_rcu` to deallcoate.
- *
- * __DO NOT__ directly call this function, instead you should let this function be called by `call_rcu()` when nobody is accessing anymore this element.
- */
-void delete_session_rcu(struct rcu_head* head){
-	struct session_rcu* session_rcu=container_of(head,struct session_rcu,rcu_head);
-	printk(KERN_DEBUG "SessionFS session manager: deleting unused session_rcu");
-	kfree(session_rcu);
 }
 
 /** \brief Copy the contents of a file into another.
@@ -351,17 +384,21 @@ int copy_file(struct file* src,struct file* dst){
  * \param[in] mode The permissions to apply to newly created files.
  * \returns The file descriptor of the new `::incarnation` or an error code (`-EAGAIN` if the parent session is invalid).
  *
- * Creates an `::incarnation` by updateing the information on SysFS using `add_incarnation_info()`, opening a new file,
- * using `open_file()`, copying the contents of the original file in the new file, using `copy_file()`, then creating an
+ * Creates an `::incarnation` by updating the information on SysFS using `add_incarnation_info()` and opening a new file,
+ * using `open_file()`, copying the contents of the original file in the new file, using `copy_file()`.Then creates an
  * `::incarnation` object, filling it with info and adding it to the `incarnations` list of the parent `::session`.
+ *
  * The original flags will be modified by adding the `O_CREAT` flag, since the incarnation file must always be created.
+ *
  * If the created incarnation is invalid the error code that has invalidated the session can be found in the `::incarnation`
  * `status` parameter.
- * If the incarnation file name has the followinf format: `[original filename]_incarnation_[pid]_[timestamp]` to make
- * the incarantion file unique. If the original pathname is too long we use the following format `/var/tmp/[pid]_[timestamp]`.
- * The timestamp is obtained by calling `ktime_get_real()`.
  *
  * If we have an invalid parent `::session` we return `-EAGAIN`.
+ *
+ * The incarnation file name has the following format: `[original filename]_incarnation_[pid]_[timestamp]` to make
+ * the incarnation file unique. If the original pathname is too long we use the following format `/var/tmp/[pid]_[timestamp]`.
+ * The timestamp is obtained by calling `ktime_get_real()`.
+ *
  */
 struct incarnation* create_incarnation(struct session* session, int flags, pid_t pid, mode_t mode){
 	int res=0;
@@ -382,7 +419,7 @@ struct incarnation* create_incarnation(struct session* session, int flags, pid_t
 		return ERR_PTR(-ENOMEM);
 	}
 	//if the current session has been detached and it will be freed shortly we abort the incarnation creation
-	if(session->valid!=VALID_NODE){
+	if(atomic_read(&(session->valid))!=VALID_NODE){
 		printk(KERN_INFO "SessionFS session manager: the parent session is invalid, aborting incarnation creation");
 		kfree(pathname);
 		kfree(incarnation);
@@ -399,7 +436,6 @@ struct incarnation* create_incarnation(struct session* session, int flags, pid_t
 	//we try to open the file
 	fd=open_file(pathname,flags | O_CREAT,mode,!NO_FD,&file);
 	if(fd<0){
-		remove_incarnation_info(&(session->info),&(incarnation->inc_attr));
 		kfree(pathname);
 		kfree(incarnation);
 		return ERR_PTR(fd);
@@ -407,22 +443,18 @@ struct incarnation* create_incarnation(struct session* session, int flags, pid_t
 	printk(KERN_DEBUG "SessionFS session manager: adding incarnation info");
 	//we add the information on the new incarnation
 	res=add_incarnation_info(&(session->info),&(incarnation->inc_attr),pid,fd);
-	/** We need to grab the parent `::session` lock in read mode from when we copy the original file over the incarnation file; since we do not
+	/**
+	 * We need to grab the parent `::session` lock in read mode from when we copy the original file over the incarnation file; since we do not
 	 * need to protect the lockless list when adding elements, but the `::session` incarnations must be created atomically in respect to close
 	 * operations on the same original file
-	 * The lock is released when the incarantion has been added to the list. */
+	 * The lock is released when the incarnation has been added to the list.
+	 */
 	read_lock(&(session->sess_lock));
 	if(res==0){
 		// if we fail adding info on the incarnation we avoid copying the original file contents in it, since it will be closed shortly after.
 		printk(KERN_DEBUG "SessionFS session manager: copying the original file over the incarnation and populating the incarnation object");
-		//we disable preemption, since we can't be interrupted while copying the from original file
-		///\todo see if they are necessary
-		//preempt_disable();
-		//smp_mb();
 		//we copy the original file in the new incarnation
 		res=copy_file(session->file,file);
-		///\todo see if they are necessary
-		//preempt_enable();
 	}
 	// we save the result in the status member of the struct, to make the shred library able to tell is the session is valid
 	printk(KERN_DEBUG "SessionFS session manager: copy result %d",res);
@@ -441,76 +473,79 @@ struct incarnation* create_incarnation(struct session* session, int flags, pid_t
 }
 
 /** \brief Removes the given `::incarnation`.
- * \param[in] session The session containing the `::incarnation`n to be removed.
+ * \param[in] session The session containing the `::incarnation` to be removed.
  * \param[in] filedes The file descriptor that identifies the `::incarnation`
  * \param[in] pid The pid of the owner of the `::incarnation`.
  * \param[in] overwrite If set to `::OVERWRITE_ORIG` it will overwrite the original file with the content of the `::incarnation` which is going to be removed, otherwise the current `::incarnation` is simply removed.
- * \returns 0 or an error code.
+ * \returns 0 or an error code (`-ENOENT` if the incarnation can't be found).
  *
  * Searches the `incarnations` list of the given `::session` for the current `::incarnation`, copies the contents of the
- * `::incarnation` over the original file (if `overwrite` is set to `::OVERWRITE_ORIG`) and removes it from the list.
- * Then it frees the memory, leaving to the userspace library the task to close and remove the file.
+ * `::incarnation` over the original file (if `overwrite` is set to `::OVERWRITE_ORIG`) and marks it as invalid.
+ * The userspace library needs to close and remove the file.
  *
- * When the incarantion is removed, SysFS is updated with `remove_incarnation_info()`.
+ * When the incarnation is removed, SysFS is updated with `remove_incarnation_info()`.
+ * There could be processes still referencing the `::incarnation` associated SysFS files after their removal, so the
+ * `::incarnation` will remain in the lockless list and will be deallocated when the `::session` will be deleted.
  *
- * __NOTE__: This method must be protected by obtaining the write lock on the `::incarnation` parent `::session`, otherwise we
- * could mess up the whole list of incarnations for a session.
  */
 int delete_incarnation(struct session* session,int filedes, pid_t pid,int overwrite){
-	int isfirst=0,res=0;
+	int res=0;
 	//we remove the incarnation from the list of incarnations
 	struct llist_node *it=NULL, *first=NULL;
 	struct incarnation* incarnation=NULL;
 	first=session->incarnations.first;
 	printk(KERN_DEBUG "SessionFS session manager: searching for the incarnation to delete");
 	//we search for the previous incarnation
-	//our incarnation the first in the list?
+	//is our incarnation the first in the list?
 	incarnation=llist_entry(first,struct incarnation,node);
-	printk(KERN_DEBUG "SessionFS session manager: first incarnation: %p",incarnation);
-	if(first!=NULL && incarnation->owner_pid==pid && incarnation->filedes==filedes){
-		session->incarnations.first=incarnation->node.next;
-		isfirst=1;
-		printk(KERN_DEBUG "SessionFS session manager: the incarnation to delete is the first in the llist");
+	if(first==NULL || incarnation->owner_pid!=pid || incarnation->filedes!=filedes){
+		incarnation=NULL;
+		printk(KERN_DEBUG "SessionFS session manager: the incarnation to delete is not the first in the llist");
 	}
-	if(!isfirst){
+
+	if(incarnation==NULL){
 		printk(KERN_DEBUG "SessionFS session manager: navigating the llist to find the incarnation to delete");
 		llist_for_each(it,first){
-			if(it->next!=NULL){
-				//we check if the next element on the list if the incarnation we must find
-				incarnation=llist_entry(it->next, struct incarnation, node);
+			if(it!=NULL){
+				incarnation=llist_entry(it, struct incarnation, node);
 				if(incarnation->owner_pid==pid && incarnation->filedes==filedes){
 					printk(KERN_DEBUG "SessionFS session manager: found the incarnation in the list");
-					//we eliminate ourselves from the list
-					it->next=incarnation->node.next;
 					break;
+				}else{
+					incarnation=NULL;
 				}
 			}
 		}
 	}
+
+	if(incarnation==NULL){
+		return -ENOENT;
+	}
+
+
 	//we remove the information on the incarnation
 	remove_incarnation_info(&(session->info),&(incarnation->inc_attr));
 	//we overwrite, if necessary, the content of the original file
 	if(overwrite==OVERWRITE_ORIG && incarnation->status == VALID_NODE){
 		printk(KERN_DEBUG "SessionFS session manager: copying the content of the incarnation over the original file");
 		//before freeing the memory we copy the content of the current incarnation in the original file
-		//we disable preemption during the copy operation
-		/// \todo check if this is necessary
-		//preempt_disable();
-		//smp_mb();
+		//we get the write lock on the session
+		write_lock(&session->sess_lock);
 		res=copy_file(incarnation->file,session->file);
-		/// \todo check if this is necessary
-		//preempt_enable();
+		//we release the lock
+		write_unlock(&(session->sess_lock));
 		if(res<0){
 			return res;
 		}
 	}
-	kfree(incarnation->pathname);
-	kfree(incarnation);
+	///The `::incarnation` to be closed will be marked as invalid, by setting its `status` member to `-ENOENT`
+	incarnation->status=-ENOENT;
+	//we leave the incarnation freeing to when the session will be deleted.
 	printk(KERN_DEBUG "SessionFS session manager: incarnation closed successfully");
 	return 0;
 }
 
-/** Initializes the `::sessions` global variable as an empty list. Avoiding the RCU initialization since we can't receive
+/** Initializes the `::sessions` global variable as an empty list. Avoids the RCU initialization since we can't receive
 * requests yet, so no one will use this list for now. Then initializes the `::sessions_lock` spinlock.
 */
 int init_manager(void){
@@ -521,9 +556,9 @@ int init_manager(void){
 	return 0;
 }
 
-/** To create a new session we check if the original file was already openeded with session semantic, by seraching for an
- * existing `::session` the same `pathname` using `search_session()`.
- * If the found `::session` is invalid or a correspoding `::session` object is not found a new `::session` object will be
+/** To create a new session we check if the original file was already opened with session semantic, by searching for an
+ * existing `::session` with the same `pathname` using `search_session()`.
+ * If the found `::session` is invalid or a matching `::session` object is not found a new `::session` object will be
  * created, using `init_session()`.
  * Then we create a new `::incarnation` of the original file with `create_incarnation()`.
  *
@@ -539,8 +574,8 @@ struct incarnation* create_session(const char* pathname, int flags, pid_t pid, m
 	session=search_session(pathname,NO_FD,NO_PID);
 	/*session_it now is either null or contains the element which represents the session for the file in pathname,
 	 * however if the session is invalid we need to create another valid session object */
-	if(session==NULL || session->valid!=VALID_NODE){
-		if(session!=NULL && session->valid!=VALID_NODE){
+	if(session==NULL || atomic_read(&(session->valid))!=VALID_NODE){
+		if(session!=NULL){
 			atomic_sub(1,&(session->refcount));
 			printk(KERN_DEBUG "SessionFS session manager: the found session has become invalid, trying deallocation");
 			delete_session(session);
@@ -569,11 +604,9 @@ struct incarnation* create_session(const char* pathname, int flags, pid_t pid, m
  * This function will close one session, by finding the corresponding `::incarnation`, using `search_session()`,
  * copying the incarnation file over the original file (atomically in respect to other session operations
  * on the same original file, and only if the `::session` is valid), and deleting the incarnation, using `delete_incarnation()`.
- * To do so we grab the `sess_lock` in write mode when closing the `::incarantion` and we release it aftwards.
  * If after the incarnation deletion the `::session` has no other `::incarnation`(s) the it will also schedule the `::session` to
  * be removed.
  *
- * If we cannot locate the parent session of an incarnation `-EBADF` is returned.
  */
 int  close_session(const char* pathname,int fdes, pid_t pid){
 	//we locate the session in which we need to remove an incarnation
@@ -582,13 +615,12 @@ int  close_session(const char* pathname,int fdes, pid_t pid){
 	printk(KERN_DEBUG "SessionFS session manager: searching for the incarnation to remove");
 	session=search_session(pathname,fdes,pid);
 	if(session==NULL){
+	/// If we cannot locate the parent session of an incarnation `-EBADF` is returned.
 		printk(KERN_DEBUG "SessionFS session manager: session not found, aborting");
 		return -EBADF;
 	}
-	//we get the write lock on the session
-	write_lock(&session->sess_lock);
-	//If the session if still valid we overwrite the original file, otherwise we simply delete the `::incarantion`.
-	if(session->valid!=VALID_NODE){
+	//If the session if still valid we overwrite the original file, otherwise we simply delete the `::incarnation`.
+	if(atomic_read(&(session->valid))!=VALID_NODE){
 		printk(KERN_DEBUG "SessionFS session manager: invalid session, the original file will not be overwritten");
 		commit=!OVERWRITE_ORIG;
 	}
@@ -599,15 +631,20 @@ int  close_session(const char* pathname,int fdes, pid_t pid){
 	}
 	printk(KERN_DEBUG "SessionFS session manager: elimination of the incarnation successful");
 	/**
+	 *
 	 * To remove a session object we need to check several conditions:
 	 * - The `::session` must be not in use by other threads (refcount==1)
-	 * - The `::incarnation` list must be empty
+	 * - The `::session` kernel object refcount, in the `info` member, must be 1
 	 * - The `::session` must be still valid and not already marked for deletion
 	 */
-	if(atomic_read(&(session->refcount))==1 && llist_empty(&(session->incarnations)) && session->valid==VALID_NODE){
-		printk(KERN_DEBUG "SessionFS session manager: detected empty llist for the associated session, attempting to purge the session object");
-		///If the current `::session` muset be removed, we flag it as invalid, to avoid having new incarnations created in here before deallocating it and making sure that it will be eventually deallocated.
-		session->valid=!VALID_NODE;
+	printk(KERN_WARNING "SessionFS session manager: session status after elimination: recount %d kobject refcount :%d",atomic_read(&(session->refcount)),kref_read(&(session->info.kobj->kref)));
+
+	if(atomic_read(&(session->refcount))==1 && kref_read(&(session->info.kobj->kref))==1 && atomic_read(&(session->valid))==VALID_NODE){
+		printk(KERN_DEBUG "SessionFS session manager: attempting to purge the session object");
+		///If the current `::session` must be removed, we flag it as invalid, to avoid having new incarnations created in here before deallocating it and making sure that it will be eventually deallocated.
+		atomic_set(&(session->valid),!VALID_NODE);
+		///We also remove its information on SysFS using `remove_session_info()`.
+		remove_session_info(&(session->info));
 		//we get the spinlock over the session list, to avoid running concurrently with another list modification primitive
 		spin_lock(&sessions_lock);
 		///Then, we can remove the current `::session` object from the rcu list, using the `::sessions_lock` spinlock to avoid concurrent operations.
@@ -618,14 +655,11 @@ int  close_session(const char* pathname,int fdes, pid_t pid){
 		//we register a callback to free the memory associated to the session
 		printk(KERN_DEBUG "SessionFS session manager: registering callback to deallocate the session_rcu object");
 		call_rcu(&(session->rcu_node->rcu_head),delete_session_rcu);
-		//we try to delete the session item
 	}
-	//we release the lock
-	write_unlock(&(session->sess_lock));
 	//we decrement the refcount
 	atomic_sub(1,&(session->refcount));
 	///Finally, we try to deallocate the `::session` if is invalid, using `delete_session()`.
-	if(session->valid!=VALID_NODE){
+	if(atomic_read(&(session->valid))!=VALID_NODE){
 		delete_session(session);
 	}
 	return 0;
@@ -640,14 +674,13 @@ int  close_session(const char* pathname,int fdes, pid_t pid){
  * if we receive it, the process is at most in a zombie state.
  *
  * When walking the `::sessions` list we increment the refcount of the `::session` in use to avoid having it removed while we are using it.
- * When we traverse the `::session` `incarnations` list we grab the `sess_lock` in write mode.
- * To remove incarnation we remove all the elements in the `incarnations` list and we add back the objects associated with an active pid,
- * closing the others without modifing the original file and updating SysFS with `remove_incarnation_info()`.
- * If a `::session` has an empty `incarnations` list it will be flagged as invalid and removed during a second walk, where,
- * with `delete_incarnation()`, we remove all the invalid `::session`(s)..
+ * We remove all the elements in the `incarnations` lockless list and we add back the objects,
+ * closing the others without modifing the original file and updating SysFS with `remove_incarnation_info()`, without deallcoating the  dead `::incarnation`(s).
+ * If a `::session` has no active incarnations it will be flagged as invalid and removed during a second walk, where,
+ * with `delete_incarnation()`, we remove all the invalid `::session`(s) and deallocate al the associated `::incarnation`(s).
  *
  * __NOTE:__ For dead incarnations that have not been closed we leave the files in the folder, since can't remove them from kernel space.
- * You will need to manually remove incarnations file for invalid processes.
+ * Userspace will need to manually remove incarnations file for invalid processes.
  */
 int clean_manager(void){
 	int manager_status=MANAGER_EMPTY,active_sessions=0,dead_sessions=0;
@@ -659,62 +692,54 @@ int clean_manager(void){
 	//we take the spinlock to be sure to be the last to have accessed this list
 	if(list_first_or_null_rcu(&sessions,struct session_rcu,list_node)!=NULL){
 		rcu_read_lock();
-				printk(KERN_DEBUG "SessionFS session manager: we have elements in the rcu list, checking sessions");
+		printk(KERN_DEBUG "SessionFS session manager: we have elements in the rcu list, checking sessions");
 		list_for_each_entry_rcu(session_rcu,&sessions,list_node){
-			//we skip invalid session that will be deleted shortly
-			if(session_rcu->session->valid==VALID_NODE){
+			//We skip invalid sessions that will be deleted shortly
+			if(atomic_read(&(session_rcu->session->valid))==VALID_NODE){
 				atomic_add(1,&(session_rcu->session->refcount));
 				//we check the remaining sessions incarnations
 				if(!llist_empty(&(session_rcu->session->incarnations))){
 					// we remove all the elements from the llist
-					write_lock(&(session_rcu->session->sess_lock));
 					llist_node=llist_del_all(&(session_rcu->session->incarnations));
 					//we walk the deleted llist searching for incarnations in use by a valid process
 					incarnation=NULL;
 					llist_for_each_safe(llist_it,llist_tmp,llist_node){
-						//if the incarnation variable is not null we need to deallocate the previous incarnation struct since it is invalid.
-						if(incarnation!=NULL){
-							kfree(incarnation);
-							incarnation=NULL;
-						}
 						incarnation=llist_entry(llist_it,struct incarnation,node);
 						//we try to get the pid struct for the pid in the
 						pid=find_get_pid(incarnation->owner_pid);
 						task=get_pid_task(pid,PIDTYPE_PID);
+						/// We consider as invalid a session which is associated to a dead process.
 						if(pid==NULL || task_is_stopped_or_traced(task)){
 							dead_sessions++;
 							//if we couldn't get the pid struct or if is NULL we consider the process is dead.
 							//we don't close the file associated to the incarnation since the kernel already closes it and we could get a GPF.
-							printk(KERN_DEBUG "SessionFS session manager: %s is owned by a dead process, freeing the session",incarnation->pathname);
-							remove_incarnation_info(&(session_rcu->session->info),&(incarnation->inc_attr));
-							kfree(incarnation->pathname);
-							//we will deallcate the incarnation at the beginning of the next iteration if the next item if not NULL
-							//we could mess un the llist_it if deallcate it now (we get a NULL pointer dereference when we advance in the loop)
-						} else{
+							//if the incarnation is invalid we have already removed the sysfs file associated.
+							if(incarnation->status==0){
+								printk(KERN_DEBUG "SessionFS session manager: %s is owned by a dead process, freeing the session",incarnation->pathname);
+								incarnation->status=-ENOENT;
+								remove_incarnation_info(&(session_rcu->session->info),&(incarnation->inc_attr));
+							}
+						} else {
 							if(IS_ERR(pid)){
 								printk(KERN_WARNING "SessionFS session manager: error while getting pid struct for %d",incarnation->owner_pid);
 							}
 							//we increment the active sessions count
 							active_sessions++;
-							//we note that the manager contains active sessions
-							manager_status=!MANAGER_EMPTY;
-							// we put back the incarnation in the llist
-							incarnation->node.next=NULL;
-							llist_add(&(incarnation->node),&(session_rcu->session->incarnations));
-							//no deallocating an active incarnation without having closed it!
-							incarnation=NULL;
 						}
-					}
-					write_unlock(&(session_rcu->session->sess_lock));
-					if(incarnation!=NULL){
-						kfree(incarnation);
-						incarnation=NULL;
+						// we put back the incarnation in the llist
+						incarnation->node.next=NULL;
+						llist_add(&(incarnation->node),&(session_rcu->session->incarnations));
 					}
 				}
 				atomic_sub(1,&(session_rcu->session->refcount));
-				if(atomic_read(&(session_rcu->session->refcount))==0 && llist_empty(&(session_rcu->session->incarnations))){
+				printk(KERN_INFO "SessionFS session manger: session status after cleanup: refcount %d kobject refcount:%d",atomic_read(&(session_rcu->session->refcount)),kref_read(&(session_rcu->session->info.kobj->kref)));
+				if(atomic_read(&(session_rcu->session->refcount))==0 && kref_read(&(session_rcu->session->info.kobj->kref))==1){
 					//we mark the session as invalid for future deletion
-					session_rcu->session->valid=!VALID_NODE;
+					atomic_set(&(session_rcu->session->valid),!VALID_NODE);
+					remove_session_info(&(session_rcu->session->info));
+				} else {
+					//we note that the manager contains active sessions, since the current session is not invalid
+					manager_status=!MANAGER_EMPTY;
 				}
 			}
 		}
@@ -724,7 +749,7 @@ int clean_manager(void){
 			printk(KERN_DEBUG "SessionFS session manager: checking for invalid session objects");
 			spin_lock(&sessions_lock);
 			list_for_each_entry_rcu(session_rcu,&sessions,list_node){
-				if(session_rcu->session->valid!=VALID_NODE){
+				if(atomic_read(&(session_rcu->session->valid))!=VALID_NODE){
 					//we can remove the current session object from the rcu list
 					list_del_rcu(&(session_rcu->list_node));
 					//we register a callback to free the memory associated to the session

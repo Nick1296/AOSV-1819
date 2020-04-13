@@ -48,7 +48,7 @@
  * \param mode The permissions to apply to newly created files.
  * \param pid The pid of the process that requests the creation of an incarnation.
  * \param filedes The file descriptor of the incarnation.
- * \param valid The session can be invalid if there was an error in the copying of the original file over the incarnation file, so the value of this parameter can be < VALID_SESS.
+ * \param valid The session can be invalid if there was an error in the copying of the original file over the incarnation file, so the value of this parameter can be <= `::VALID_SESS`.
  *
  * This struct will hold all the necessary parameters used to open and close sessions.
 */

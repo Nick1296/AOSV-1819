@@ -73,9 +73,11 @@ struct device* dev=NULL;
 
 /** \brief Check if the given path is a subpath of `::sess_path`
 *
-* Gets the dentry from the given path and from  `::sess_path` and check is the second dentry is an ancestor of the first dentry.
+* Gets the dentry from the given path and from  `::sess_path` and checks if the second dentry is an ancestor of the first dentry.
 * \param[in] path Path to be checked
 * \returns `::PATH_OK` if the given path is a subpath of `::sess_path` and !`::PATH_OK` otherwise; an error code is returned on error.
+*
+* If the dentry corresponding to the given path cannot be found, the function will check if `::sess_path` is a substring of the given path.
 */
 int path_check(const char* path){
 	struct path psess,pgiven;
@@ -83,20 +85,23 @@ int path_check(const char* path){
 	int retval;
 	char* p_check=NULL;
 	//get dentry from the sess_path
-	printk(KERN_DEBUG "SessionFS char device getting %s dentry",sess_path);
 	read_lock(&dev_lock);
 	retval=kern_path(sess_path,LOOKUP_FOLLOW,&psess);
-	if(retval!=0){
+	read_unlock(&dev_lock);
+	if(retval<0){
+		printk(KERN_DEBUG "SessionFS char device: error, can't get %s dentry",sess_path);
 		return retval;
 	}
 	dsess=psess.dentry;
 	//get dentry from given path
 	retval=kern_path(path,LOOKUP_FOLLOW,&pgiven);
 	if(retval<0 && retval!=-ENOENT){
+	printk(KERN_DEBUG "SessionFS char device: can't get %s dentry",path);
 		return retval;
 	}else{
-		/// \todo check is this is a valid solution
-		//we try to find sess_path as a substring of the given path
+		//we try to find sess_path as a substring of the given path if the file does not exist
+		read_lock(&dev_lock);
+		printk(KERN_DEBUG "SessionFS char device: %s dentry is non-existent, checking that %s is a substring of the given path",path,sess_path);
 		p_check=strstr(path,sess_path);
 		read_unlock(&dev_lock);
 		if(p_check==NULL){
@@ -105,8 +110,6 @@ int path_check(const char* path){
 			return PATH_OK;
 		}
 	}
-	read_unlock(&dev_lock);
-	printk(KERN_DEBUG "SessionFS char device: got %s dentry",path);
 	dgiven=pgiven.dentry;
 
 	dentry=dgiven;
@@ -126,11 +129,12 @@ int path_check(const char* path){
  * \param[in] buflen The lenght of the supplied buffer.
  * \param file unused, but necessary to fit the function into struct file_operations.
  * \param offset unused, but necessary to fit the function into struct file_operations.
- * \returns The number of bytes written in `buffer`, or an error code (`-EINVAL` if one of the supplied parameters are invalid,
- *  `-EAGAIN` if the copy_to_user failed, `-ENODEV` if the device is disabled).
- * The device_read will copy the `::sess_path` content in the supplied buffer.
+ * \returns The number of bytes written in `buffer`, or an error code (`-EINVAL` if one of the supplied parameters is invalid,
+ *  `-EAGAIN` if the `copy_to_user()` failed, `-ENODEV` if the device is disabled).
+ *
+ * This function will copy the `::sess_path` content in the supplied buffer.
  * The first operations be executed are the check for the device status on `::device_status`, the incrementation of the `::refcount`.
- * Then `::dev_lock` is grabbed for reading; after the operation is completed `::dev_lock` is released and the `refcount` is decremented.
+ * Then `::dev_lock` is grabbed for reading; after the operation is completed `::dev_lock` is released and the `::refcount` is decremented.
  */
 static ssize_t device_read(struct file* file, char* buffer,size_t buflen,loff_t* offset){
 	int bytes_not_read=0;
@@ -145,12 +149,10 @@ static ssize_t device_read(struct file* file, char* buffer,size_t buflen,loff_t*
 		return -EINVAL;
 	}
 
-	printk(KERN_DEBUG "SessionFS char device: read locking dev_lock for device_read");
 	printk(KERN_DEBUG "SessionFS char device: reading session path\n");
 	read_lock(&dev_lock);
 	bytes_not_read=copy_to_user(buffer,sess_path,path_len);
 	read_unlock(&dev_lock);
-	printk(KERN_DEBUG "SessionFS char device: read releasing dev_lock for device_read");
 	atomic_sub(1,&refcount);
 	if(bytes_not_read>0){
 		return -EAGAIN;
@@ -165,7 +167,8 @@ static ssize_t device_read(struct file* file, char* buffer,size_t buflen,loff_t*
  * \param offset unused, but necessary to fit the function into struct file_operations.
  * \returns The number of bytes written in `buffer`, or an error code (`-EINVAL` if one of the supplied parameters are invalid,
  * `-EAGAIN` if the copy_from_user failed, `-ENODEV` if the device is disabled).
- * The device_write will reset and overwrite `::sess_path`, without affecting existing sessions, if the supplied path is absolute.
+ *
+ * This function will reset and overwrite `::sess_path`, without affecting existing sessions, if the supplied path is absolute.
  * To do so we check `::device_status` and we increment `::refcount`.
  * Then we check that the supplied path starts with '/', grab `::dev_lock` for write operations, we zero-fill `::sess_path`,
  * copy the new string and add a terminator, just in case.
@@ -204,15 +207,14 @@ static ssize_t device_write(struct file* file,const char* buffer,size_t buflen,l
 		return -EINVAL;
 	}
 
-	printk(KERN_DEBUG "SessionFS char device: write locking dev_lock for device_write");
 	write_lock(&dev_lock);
+	printk(KERN_DEBUG "SessionFS char device: changing session path to %s",tmpbuf);
 	memset(sess_path,0,sizeof(char)*PATH_MAX);
 	memcpy(sess_path,tmpbuf,sizeof(char)*buflen);
 	//adding string terminator
 	sess_path[PATH_MAX-1]='\0';
 	path_len=buflen;
 	write_unlock(&dev_lock);
-	printk(KERN_DEBUG "SessionFS char device: write releasing dev_lock for device_write");
 	kfree(tmpbuf);
 	atomic_sub(1,&refcount);
 	return 0;
@@ -236,7 +238,7 @@ static char *sessionfs_devnode(struct device *dev, umode_t *mode)
 	return NULL;
 }
 
-/** \brief Handles the ioctls calls from the shared library.
+/** \brief Handles the ioctls calls issued to the `SessionFS_dev` device.
  * \param[in] file The special file that represents our char device.
  * \param[in] num The ioctl sequence number, used to identify the operation to be
  * executed, its possible values are `::IOCTL_SEQ_OPEN`, `::IOCTL_SEQ_CLOSE` and `::IOCTL_SEQ_SHUTDOWN`.
@@ -245,16 +247,16 @@ static char *sessionfs_devnode(struct device *dev, umode_t *mode)
  *
  * This function checks `::device_status`, increments `::refcount`, then copies the `::sess_params` struct and its `orig_pathname` in kernel space.
  * Its behaviour differs in base of the ioctl sequence number specified:
- * - `::IOCTL_SEQ_OPEN`: copies the pathname of the original file in kernel space and tries to create a session, by invoking `create_session()`.
- * 	If the session and the incarnation are created succesfully the file descriptor of the incarnation is copied into `::sess_params` `pid`
+ * - `::IOCTL_SEQ_OPEN`: Tries to create a session by invoking `create_session()`.
+ * 	If the session and the incarnation are created successfully the file descriptor of the incarnation is copied into `::sess_params` `filedes`
  * 	member.
- * 	If the incarnation gets corrupted during creation, the pid is updated as in the successful case, but the corresponding error code is
+ * 	If the incarnation gets corrupted during creation, the `filedes` member of `::sess_params` is updated as in the successful case, but the corresponding error code is
  * 	returned, so that the library can close and remove the corrupted incarnation file.
  *
  * - `::IOCTL_SEQ_CLOSE`: closes an open session using `close_session()` and the incarnation file must be closed and removed by the library. If
  * the original file does not exist anymore it sends `SIGPIPE` to the user process.
  *
- * - `::IOCTL_SEQ_SHUTDOWN`: disables the device, setting `::device_status` to `::DEVICE_DISABLED`, to avoid race conditions, then calls
+ * - `::IOCTL_SEQ_SHUTDOWN`: disables the device, setting `::device_status` to `::DEVICE_DISABLED`, to avoid race conditions. Then calls
  * `clean_manager()` to check if there are active sessions.
  * 	If there are no active sessions and the refcount is 1 (we are the only process using the device) then the module is unlocked, using
  * 	`module_put()`. Otherwise the device is re-enabled, setting `::device_status` to `!::DEVICE_DISABLED` and the ioctl fails with `-EAGAIN`.
@@ -351,8 +353,8 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 			//we overwrite the existing sess_struct in userspace
 			res=copy_to_user((struct sess_params*)param,p,sizeof(struct sess_params));
 			kfree(p);
-			printk(KERN_DEBUG "SessionFS char device: bytes not copied to userspace: %d, size of strct sess_params: %ld",res, sizeof(struct sess_params));
 			if(res>0){
+				printk(KERN_DEBUG "SessionFS char device: bytes not copied to userspace: %d, size of strct sess_params: %ld",res, sizeof(struct sess_params));
 				atomic_sub(1,&refcount);
 				return -EAGAIN;
 			}
@@ -396,11 +398,12 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 			res=copy_to_user((int*)param,&active_sessions,sizeof(int));
 			if(res>0){
 				printk(KERN_DEBUG "SessionFS char device: bytes not copied to userspace: %d",res);
-				atomic_sub(1,&refcount);
-				return -EAGAIN;
 			}
-			printk(KERN_DEBUG "SessionFS char device: refcount %d,active_sessions: %d",atomic_read(&refcount),active_sessions);
-			if(active_sessions==0 && atomic_read(&refcount)==1){
+			printk(KERN_DEBUG "SessionFS char device: refcount %d,active_sessions: %d,kobject refcount: %d ",atomic_read(&refcount),active_sessions,kref_read(&(dev->kobj.kref)));
+			/// To allow the unload of the module we need to have no active sessions, no processes that are using the device and no processes that are using the device kobject.
+			if(active_sessions==0 && atomic_read(&refcount)==1 && kref_read(&(dev->kobj.kref))==2){
+				//we wait for the rcu items to be deallocated
+				synchronize_rcu();
 				printk(KERN_INFO "SessionFS char device: shutdown allowed, module unlocked");
 				// since we are the only ones using the device we can safely unlock it while maintaing it disabled.
 				module_put(THIS_MODULE);
@@ -416,7 +419,7 @@ long int device_ioctl(struct file * file, unsigned int num, unsigned long param)
 	return res;
 }
 
-/** Initializes the devices by setting `::sess_path`, `::path_len` vairables:
+/** Initializes and registers the device by setting `::sess_path`, `::path_len` variables:
  * `::dev_ops` will contain the operations allowed on the device, which are `device_ioctl()`, `device_read()` and `device_write()`, and the `sessionfs_devnode()` callback to set the inode permissions.
  * The _Session Manager_ submodule is also initialized using  `init_manager()` and the same happens for the
  * _Session Information_ submodule, using `init_info()`, after the device is registered.
@@ -482,12 +485,12 @@ void release_device(void){
 	clean_manager();
 	printk(KERN_DEBUG "SessionFS char device: releasing the device resources");
 	//we check if there are active incarnations
-	printk(KERN_INFO "SessionFS char device: unregistering device and freeing used memory");
+	printk(KERN_DEBUG "SessionFS char device: unregistering device and freeing used memory");
 	//remove the info on sessions
 	release_info();
+	printk(KERN_DEBUG "SessionFS char device: destroying and unregistering the device");
 	//unregister the device
 	device_destroy(dev_class,MKDEV(MAJOR_NUM,0));
-	class_unregister(dev_class);
 	class_destroy(dev_class);
 	unregister_chrdev(MAJOR_NUM,DEVICE_NAME);
 	//free used memory

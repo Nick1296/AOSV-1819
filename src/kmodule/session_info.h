@@ -16,7 +16,7 @@
 ///Each attribute group has the same name, but different attributes according to the parent kobject.
 #define ATTR_GROUP_NAME "info"
 
-/** \brief initialiezes the SessionFS kobject with general information about the running sessions.
+/** \brief Initializes the SessionFS kobject with general information about the running sessions.
  * \param[in] device_kobj The SessionFS char device kernel object, in which contains the info on all sessions.
  * \returns 0 on success, an error code on failure.
  */

@@ -9,25 +9,26 @@
 #include <linux/kobject.h>
 
 /** \struct sess_info
+ * \brief Infromations on a `::session` used by SysFS.
  * \param kobj The `::session` kernel object.
- * \param inc_num_attr The kernel object attribute that represents the number of incanrations for the original file.
- * \param inc_num The actual number of open incarnations for the original file.
+ * \param inc_num_attr The kernel object attribute that represents the number of incarnations for the original file.
  * \param f_name Formatted filename of the session object, where each '/' is replaced by a '-'.
+ * \param inc_num The actual number of open incarnations for the original file.
  *
- * This struct represent the published information about a `::session`
+ * This struct represents the published information about a `::session`.
  */
 struct sess_info{
 	struct kobject* kobj;
 	struct kobj_attribute inc_num_attr;
 	char* f_name;
-	int inc_num;
+	atomic_t inc_num;
 };
 
 /** \struct incarnation
  * \brief Informations on an incarnation of a file.
- * \param next Next `::incarnation` on the list.
+ * \param node Next `::incarnation` on the list.
  * \param file The struct file that represents the incarantion file.
- * \param inc_attr a kobj_attribute that is used to read incarantion::owner_pid and the process name.
+ * \param inc_attr a kernel object attribute that is used to read `::incarnation` `owner_pid` and the process name.
  * \param pathname The pathanme of the incarnation file.
  * \param filedes File descriptor of the incarnation file.
  * \param owner_pid Pid of the process that has requested the `::incarnation`.
@@ -48,11 +49,11 @@ struct incarnation{
 /** \struct session
  * \brief General information on a `::session`.
  * \param incarnations List (lockless) of the active `::incarnation`(s) of the file.
- * \param info Informations on the current original file, represented by `::sess_info` struct.
+ * \param info Informations on the current original file, represented by a`::sess_info` struct.
  * \param file The struct file that represents the original file.
  * \param rcu_node Pointer to the `::session_rcu` that contains the current session object.
- * \param pathame Pathname of the file that is opened with session semantic.
- * \param sess_lock read-write lock used to access ensure serialization in the session closures.
+ * \param pathname Pathname of the file that is opened with session semantic.
+ * \param sess_lock read-write lock used to ensure serialization in the session closures.
  * \param filedes Descriptor of the file opened with session semantic.
  * \param refcount The number of processes that are currently using this `::session`.
  * \param valid This parameter is used (after having gained the rwlock) to check if this struct `::session` is still attached to the rculist.
@@ -68,12 +69,12 @@ struct session{
 	const char* pathname;
 	rwlock_t sess_lock;
 	atomic_t refcount;
-	int valid;
+	atomic_t valid;
 };
 
 /** \struct session_rcu
  * \brief RCU item that contains a `::session`.
- * \param list_node used to navigate the list of sessions.
+ * \param list_node Used to navigate the list of sessions.
  * \param rcu_head The rcu head structure used to protect the list with RCU.
  * \param session The struct `::session` which holds the session information.
  *

@@ -1,7 +1,7 @@
 /** \file libsessionfs.c
  * \brief Implementation of the userspace shared library.
  *
- * Used to provide a trasparent interface to the userspace application, that can use the libc open and close functions, along with the ::O_SESS flag to work with sessions. To change session path instead, it can use the get_sess_path() and write_sess_path() utility functions, to avoid the need to comminucate directly with the `SessionFS_dev` device.
+ * Used to provide a trasparent interface to the userspace application, that can use the libc open and close functions, along with the ::O_SESS flag to work with sessions. To change session path instead, it can use the get_sess_path() and write_sess_path() utility functions, to avoid the  direct communication with the `SessionFS_dev` device.
 */
 
 /// Enables RTLD_NEXT macro.
@@ -18,7 +18,6 @@
 #include <sys/ioctl.h>
 #include <stdarg.h>
 
-///For the definition of the `::O_SESS` flagm ioctl numbers and sess_params struct.
 #include "libsessionfs.h"
 
 ///The path of our device file
@@ -36,22 +35,22 @@ orig_open_type orig_open;
 orig_close_type orig_close;
 
 /** \brief A program constructor which saves the original value for the `open` and `close` symbols.
-* \return 0 on success or -1 on error, setting errno.
+* \return 0 on success or -1 on error, setting `errno`.
+*
 * We save the original open and close since the library needs to understand when it's necessary to use the char device
 * and when the libc implementation must be used.
 * To do so we save them we use the `dlsym` function and we define two new types to avoid using a function pointer directly: `::orig_open_type` and `::orig_close_type`, these are simple typedefs that wrap the function poitner for libc `open` and `close`.
-*
 */
 static __attribute__((constructor)) int init_method(void){
 	orig_open = (orig_open_type) dlsym(RTLD_NEXT, "open");
 	if(orig_open==NULL){
-		printf("libsessionfs: error: can't load libc open: %s",dlerror());
+		printf("%d libsessionfs error: can't load libc open: %s\n",getpid(),dlerror());
 		errno=ENODATA;
 		return -1;
 	}
 	orig_close = (orig_close_type) dlsym(RTLD_NEXT,"close");
 	if(orig_open==NULL){
-		printf("libsessionfs: error: can't load libc close: %s",dlerror());
+		printf("%d libsessionfs: error: can't load libc close: %s\n",getpid(),dlerror());
 		errno=ENODATA;
 		return -1;
 	}
@@ -61,15 +60,15 @@ static __attribute__((constructor)) int init_method(void){
 /**
  * \brief Wraps the close determining if it must call the libc `close` or the SessionFS module.
  * \param[in] fd file descriptor to deallocate, same as libc `open`'s `fildes`.
- * \returns 0 on success, -1 on error, setting errno to indicate the error value.
+ * \returns 0 on success, -1 on error, setting `errno` to indicate the error value.
  *
  * To determine if libc close must be used, the file pathname is read from `/proc/self/fd`, then `readlink` is used to resolve
  * the pathname and make it absolute, finally, if this pathname contains the `_incarnation_[pid]_` substring then it must be closed
  * by issuing an ioctl with number `::IOCTL_SEQ_CLOSE` to the `SessionFS_dev` device.
  * Otherwise the libc `close` is called.
- * A ::sess_params struct is used to pass parameters to the char device when necessary and after the device completes it operations
+ * A ::sess_params struct is used to pass parameters to the char device when necessary. After the device completes its operations
  * libc `close` is called to remove the file descriptor and `remove` is called to delete the incarnation file from the disk.
- * If the return value from the ioctl is `ENODEV` the the device was temporarly disabled and the operation must be retried.
+ * If the return value from the ioctl is `-ENODEV` the the device was temporarly disabled and the operation must be retried.
  *
  */
 int close(int fd){
@@ -111,7 +110,7 @@ int close(int fd){
 		free(inc_path);
 		return res;
 	}
-	printf("libsessionfs: path to the file that must be closed: %s\n",inc_path);
+	printf("%d libsessionfs: path to the file that must be closed: %s\n",getpid(),inc_path);
 	//we trasform the path to the incarnation to the path to the session
 	char *inc_text=NULL,*sess_path=NULL;
 	sess_path=malloc(sizeof(char)*PATH_MAX);
@@ -136,23 +135,23 @@ int close(int fd){
 	free(tmp_path);
 	if(inc_text==NULL){
 		//the file that we need to close is not an incarnation, so we call libc's close
-		printf("libsessionfs: file descriptor is not a session incarnation, using libc close\n");
+		printf("%d libsessionfs: file descriptor is not a session incarnation, using libc close\n",getpid());
 		free(params);
 		free(inc_path);
 		free(sess_path);
 		return orig_close(fd);
 	} else {
-		printf("libsessionfs: detected a session incarnation, adjusting path to match original file\n");
+		printf("%d libsessionfs: detected a session incarnation, adjusting path to match original file\n",getpid());
 		//we remove the '_incarnation_...' to obtain the original file path
 		memset(inc_text,0,strlen(inc_text));
-		printf("libsessionfs: original file path: %s\n",sess_path);
+		printf("%d libsessionfs: original file path: %s\n",getpid(),sess_path);
 	}
 	params->orig_path=sess_path;
 	params->filedes=fd;
 	params->pid=getpid();
 	//we open the device
 	int dev;
-	printf("libsessionfs: opening char device\n");
+	printf("%d libsessionfs: opening char device\n",getpid());
 	dev=orig_open(DEV_PATH,O_WRONLY);
 	if(dev<0){
 		free(sess_path);
@@ -160,7 +159,7 @@ int close(int fd){
 		free(inc_path);
 		return dev;
 	}
-	printf("libsessionfs: calling kernel module to remove the session\n");
+	printf("%d libsessionfs: calling kernel module to remove the session\n",getpid());
 	//we remove the incarnation
 	//we retry if we receive ENODEV, since the module will notice that there is a valid session to be closed
 	res=-ENODEV;
@@ -169,11 +168,11 @@ int close(int fd){
 	if(res<0){
 		orig_close(dev);
 		if(res==-ENODEV){
-			printf("libsessionfs: error: device disabled, retry closing");
+			printf("%d libsessionfs: error: device disabled, retry closing\n",getpid());
 			errno=ENODEV;
 			return -1;
 		}
-		printf("libsessionfs: error during session close\n");
+		printf("%d libsessionfs: error during session close\n",getpid());
 		free(inc_path);
 		free(params);
 		errno=-res;
@@ -181,10 +180,10 @@ int close(int fd){
 	}
 	res=orig_close(dev);
 	if(res<0){
-		printf("libsessionfs: error using libc's close to close the device\n");
+		printf("%d libsessionfs: error using libc's close to close the device\n",getpid());
 		return res;
 	}
-	printf("libsessionfs: calling libc close to remove the file descriptor\n");
+	printf("%d libsessionfs: calling libc close to remove the file descriptor\n",getpid());
 	//we call libc close
 	res=orig_close(fd);
 	if(res<0){
@@ -192,10 +191,10 @@ int close(int fd){
 		free(params);
 		return res;
 	}
-	printf("libsessionfs: removing the incarnation file\n");
+	printf("%d libsessionfs: removing the incarnation file\n",getpid());
 	res=remove(inc_path);
 	if(res<0){
-		printf("libsessionfs: error during the elimination of the incarnation file\n");
+		printf("%d libsessionfs: error during the elimination of the incarnation file\n",getpid());
 		return res;
 	}
 	free(inc_path);
@@ -207,18 +206,18 @@ int close(int fd){
  * \brief Wraps the open determining if it must call the libc `open` or the SessionFS module.
  * \param[in] pathname The pathname of the file to be opened, same usage an type of the libc `open`'s `pathname`.
  * \param[in]  flags Flags to determine the file status flag and the access modes, same as the libc `open`'s `oflag`, however a possible flag is the ::O_SESS flag which enables the session semantic.
- * \param[in] mode The permission to set if a file must be created, (when `O_CREAT` is specified).
- * \returns It will return a file descriptor if the operation is successful, both for the libc version and for the module return value.
+ * \param[in] mode An optional parameter, which defines the permissions to set if a file must be created, (when `O_CREAT` is specified).
+ * \returns It will return a file descriptor if the operation is successful, or -1, setting `errno`.
  *
- * This function will check for the presence of the ::O_SESS flag and if the path of the file to be opened is has as a substring the session path.
+ * This function will check for the presence of the ::O_SESS flag and if the path of the file to be opened has as a substring the session path.
  *
- * If the checks are successful, the function will perform an ioctls call to the SessionFS kernel module, via the `SessionFS_dev` device, to open a new session for the given pathname.
+ * If the checks are successful, the function will perform an ioctl call to the SessionFS kernel module, via the `SessionFS_dev` device, to open a new session for the given pathname.
  * Otherwise, the function will call the libc implementation of the `open` systemcall.
  *
- * To check that the path has a substring `realpath` is used, to convert the pathname to absolute.
- * If `realpath` fails with `ENOENT` the path provided might be the relative path to a file that must be created, so the path of the current diretory is used as the file path.
+ * To check that the given path has `::sess_path` as a substring, `realpath()` is used, to convert the pathname to absolute.
+ * If `realpath()` fails with `ENOENT`, the path provided might be the relative path to a file that must be created, so the path of the current diretory is used as the file path.
  *
- * To perform the ioctl the ::IOCTL_SEQ_OPEN number is used and struct ::sess_params is filled and passed as an argument, to provide all the necessary informations to the device.
+ * To perform the ioctl the `::IOCTL_SEQ_OPEN` number is used and struct `::sess_params` is filled and passed as an argument, to provide all the necessary informations to the device.
  *
  * If the opened session is not valid, the function will call `close()` to remove the invalid session in a clean way and the function will fail with `EAGAIN`.
  *
@@ -236,27 +235,27 @@ int open(const char* pathname, int flags, ...){
 	//we get the session path from the device
 	char *sess_path=malloc(sizeof(char)*PATH_MAX), *file_path=malloc(sizeof(char)*PATH_MAX), *path=NULL;
 	if(sess_path==NULL || file_path==NULL){
-		printf("libsessionfs: error: not enough memory\n");
+		printf("%d libsessionfs: error: not enough memory\n",getpid());
 		errno=-ENOMEM;
 		return -1;
 	}
 	memset(file_path,0,sizeof(char)*PATH_MAX);
 	//we convert (if necessary) the give pathname to an absolute pathname
 	if(pathname[0]!='/'){
-		printf("libsessionfs: converting pathname to absolute...\n");
+		printf("%d libsessionfs: converting pathname to absolute...\n",getpid());
 		path=realpath(pathname,file_path);
 		if(path==NULL){
 			//the user might want to create a file
 			if(errno==ENOENT && (flags & O_CREAT)){
 				path=realpath(".",file_path);
-				printf("libsessionfs: absolute path for current directory: %s\n",file_path);
+				printf("%d libsessionfs: absolute path for current directory: %s\n",getpid(),file_path);
 				if(path==NULL){
 					return -1;
 				}
 				strncat(file_path,slash,strlen(slash));
 				strncat(file_path,pathname,sizeof(char)*(PATH_MAX-strlen(file_path)+1));
 			}else{
-				printf("libsessionfs: error: path conversion failed\n");
+				printf("%d libsessionfs: error: path conversion failed\n",getpid());
 				free(sess_path);
 				free(file_path);
 				return -1;
@@ -265,30 +264,30 @@ int open(const char* pathname, int flags, ...){
 	} else {
 		strncpy(file_path,pathname,sizeof(char)*PATH_MAX);
 	}
-	printf("libsessionfs: pathname: %s, absolute pathname: %s\n",pathname,file_path);
+	printf("%d libsessionfs: pathname: %s, absolute pathname: %s\n",getpid(),pathname,file_path);
 	memset(sess_path,0,sizeof(char)*PATH_MAX);
-	printf("libsessionfs: reading the current session path\n");
+	printf("%d libsessionfs: reading the current session path\n",getpid());
 	res=get_sess_path(sess_path,PATH_MAX);
 	if(res<0){
 		free(file_path);
 		free(sess_path);
 		return res;
 	}
-	printf("libsessionfs: current session path: %s \t given pathname: %s\n", sess_path,file_path);
+	printf("%d libsessionfs: current session path: %s \t given pathname: %s\n",getpid(), sess_path,file_path);
 	//we check if the file is in the right path
 	path=strstr(file_path,sess_path);
 	// check for the presence of the O_SESS flag
 	flag=flags & O_SESS;
 	free(sess_path);
 	if(flag==O_SESS && path!=NULL){
-		printf("libsessionfs: detected O_SESS flag and correct path\n");
+		printf("%d libsessionfs: detected O_SESS flag and correct path\n",getpid());
 		//we open the device
 		dev=orig_open(DEV_PATH,O_WRONLY);
 		if(dev<0){
 			free(file_path);
 			return dev;
 		}
-		printf("libsessionfs: allocating and filling a sess_params struct\n");
+		printf("%d libsessionfs: allocating and filling a sess_params struct\n",getpid());
 		//we prepare an instance of the sess_params struct
 		struct sess_params* params=malloc(sizeof(struct sess_params));
 		memset(params,0,sizeof(struct sess_params));
@@ -302,12 +301,12 @@ int open(const char* pathname, int flags, ...){
 		params->flags=flags;
 		params->mode=mode;
 		params->pid=getpid();
-		printf("libsessionfs: calling kernel module to create a new incarnation\n");
+		printf("%d libsessionfs: calling kernel module to create a new incarnation\n",getpid());
 		res=ioctl(dev,IOCTL_SEQ_OPEN,params);
 		if(res<0){
-			perror("libsessionfs: error creating the session, trying to close the invalid session");
-			close(params->filedes);
+			printf("%d libsessionfs: error creating the session, trying to close the invalid session\n",getpid());
 			orig_close(dev);
+			close(params->filedes);
 			free(file_path);
 			free(params);
 			errno=-res;
@@ -315,12 +314,12 @@ int open(const char* pathname, int flags, ...){
 		}
 		res=orig_close(dev);
 		if(res<0){
-			printf("libsessionfs: error using libc's close to close the device\n");
+			printf("%d libsessionfs: error using libc's close to close the device\n",getpid());
 			return res;
 		}
 		//we check if the created session is valid
 		if(params->valid != VALID_SESS){
-			printf("libsessionfs: error: session invalid: closing\n");
+			printf("%d libsessionfs: error: session invalid: closing\n",getpid());
 			//if is invalid we need to call our close
 			close(params->filedes);
 			errno=-EAGAIN;
@@ -329,13 +328,13 @@ int open(const char* pathname, int flags, ...){
 			return -1;
 		}
 		free(file_path);
-		printf("libsessionfs: session opened successfully, fd:%d\n",params->filedes);
+		printf("%d libsessionfs: session opened successfully, fd:%d\n",getpid(),params->filedes);
 		res=params->filedes;
 		free(params);
 		return res;
 	} else {
 		free(file_path);
-		printf("libsessionfs: calling libc open\n");
+		printf("%d libsessionfs: calling libc open\n",getpid());
 		/// When creating a new file we need to call `creat` since we have the symbol only for the open with two parametrs.
 		if(flags & O_CREAT){
 			res=creat(pathname,mode);
@@ -349,13 +348,13 @@ int open(const char* pathname, int flags, ...){
 }
 
 /**
- * This function is a simple utility function that reads from the `SessionFS_dev` device, located at ::DEV_PATH, the current session path and places it in the buffer provided by the caller.
+ * This function is a simple utility function that reads from the `SessionFS_dev` device, located at `::DEV_PATH`, the current session path and places it in the buffer provided by the caller.
 */
 int get_sess_path(char* buf,int bufsize){
 	int dev=0,res=0;
 	dev=orig_open(DEV_PATH, O_RDONLY);
 	if(dev<0){
-		perror("libsessionfs: can't open SessionFS_dev");
+		printf("%d libsessionfs: can't open SessionFS_dev\n",getpid());
 		return dev;
 	}
 	res=read(dev,buf,bufsize);
@@ -366,20 +365,20 @@ int get_sess_path(char* buf,int bufsize){
 	}
 	res=orig_close(dev);
 	if(res<0){
-		printf("libsessionfs: error using libc's close to close the device\n");
+		printf("%d libsessionfs: error using libc's close to close the device\n",getpid());
 		return res;
 	}
 	return res;
 }
 
 /**
- * This function is a simple utility function that writes on the `SessionFS_dev` device, located at ::DEV_PATH, the content of the buffer provided by the user; before doing so however, it uses the `realpath` function to make sure that the path provided to char device is an absolute path.
+ * This function is a simple utility function that writes on the `SessionFS_dev` device, located at `::DEV_PATH`, the content of the buffer provided by the user; before doing so however, it uses the `realpath()` function to make sure that the path provided to char device is an absolute path.
  */
 int write_sess_path(char* path){
 	int dev=-1, res=0;
 	char* abs_path=NULL;
 
-	printf("libsessionfs: converting %s path to absolute\n",path);
+	printf("%d libsessionfs: converting %s path to absolute\n",getpid(),path);
 	abs_path=realpath(path,abs_path);
 	if(abs_path==NULL){
 		return -1;
@@ -387,13 +386,13 @@ int write_sess_path(char* path){
 
 	dev=orig_open(DEV_PATH,O_WRONLY);
 	if(dev<0){
-		perror("libsessionfs: can't open SessionFS_dev");
+		printf("%d libsessionfs: can't open SessionFS_dev\n",getpid());
 		return dev;
 	}
 
 	//adding string terminator, may overwrite the lasta caracter bus is needed.
 	abs_path[PATH_MAX]='\0';
-	printf("libsessionfs: absolute path: %s\n",abs_path);
+	printf("%d libsessionfs: absolute path: %s\n",getpid(),abs_path);
 	res=write(dev,abs_path,strlen(abs_path));
 	free(abs_path);
 	if(res<0){
@@ -403,7 +402,7 @@ int write_sess_path(char* path){
 	}
 	res=orig_close(dev);
 	if(res<0){
-		printf("libsessionfs: error using libc's close to close the device\n");
+		printf("%d libsessionfs: error using libc's close to close the device\n",getpid());
 		return res;
 	}
 	return res;
@@ -422,17 +421,17 @@ int device_shutdown(void){
 	//we request the device shutdown
 	res=ioctl(dev,IOCTL_SEQ_SHUTDOWN,&active_sessions);
 	if(res<0){
-		printf("libsessionfs: error: device shutdown failed,%d session active, try again later\n",active_sessions);
+		printf("%d libsessionfs: error: device shutdown failed,%d session active, try again later\n",getpid(),active_sessions);
 		orig_close(dev);
 		errno=-res;
 		res=-1;
 		return res;
 	}else{
-		printf("libsessionfs: device shutdown successful\n");
+		printf("%d libsessionfs: device shutdown successful\n",getpid());
 	}
 	res=orig_close(dev);
 	if(res<0){
-		printf("libsessionfs: error using libc's close to close the device\n");
+		printf("%d libsessionfs: error using libc's close to close the device\n",getpid());
 		return res;
 	}
 	return res;

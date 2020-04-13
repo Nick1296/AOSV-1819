@@ -23,7 +23,7 @@ MODULE_DESCRIPTION("A session based virtual filesystem wrapper");
 /// Module version specification
 MODULE_VERSION("0.5");
 
-/// We set the session path as a rad-only module parameter.
+/// We set the session path as a read-only module parameter.
 module_param(sess_path,charp,0444);
 MODULE_PARM_DESC(sess_path,"path in which session sematic is enabled");
 
@@ -38,7 +38,7 @@ static int __init sessionFS_load(void){
 }
 
 /**
- * \brief Before unloading the module we relase the device.
+ * Before unloading the module we relase the device.
  */
 static void __exit sessionFS_unload(void){
 	printk(KERN_INFO "SessionFS: shutting down the device");

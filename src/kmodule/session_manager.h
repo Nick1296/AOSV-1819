@@ -9,7 +9,6 @@
 
 #include <linux/types.h>
 
-///The structs that represent sessions, incarnation and their informations.
 #include "session_types.h"
 
 /** \brief Initialization of the session manager data structures.
