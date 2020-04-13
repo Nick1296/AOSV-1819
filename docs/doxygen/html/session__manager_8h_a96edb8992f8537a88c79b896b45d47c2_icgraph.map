@@ -1,0 +1,8 @@
+<map id="clean_manager" name="clean_manager">
+<area shape="rect" id="node1" title="Releases all the incarnations that are associated with a dead/zombie pid." alt="" coords="531,31,653,57"/>
+<area shape="rect" id="node2" href="$device__sessionfs_8c.html#a72e3cac371d57c08b7a62d2cb9e13fb3" title="Handles the ioctls calls issued to the SessionFS_dev device." alt="" coords="373,5,473,32"/>
+<area shape="rect" id="node5" href="$device__sessionfs__mod_8h.html#ac7ee6e3825fe5ac77a75a42e4da28843" title="Releases the device and frees the used memory." alt="" coords="363,56,483,83"/>
+<area shape="rect" id="node3" href="$device__sessionfs__mod_8h.html#a88bd4adb20dc9040ae78f5b4036b61ab" title="Device initialization and registration." alt="" coords="199,5,292,32"/>
+<area shape="rect" id="node4" href="$module_8c.html#af4b79167ea5472e999750f3f28dd0f74" title="Loads the device when the kernel module is loaded in the kernel." alt="" coords="5,5,128,32"/>
+<area shape="rect" id="node6" href="$module_8c.html#abd810a6f947c3b87a782a9aad746eef3" title=" " alt="" coords="176,56,315,83"/>
+</map>

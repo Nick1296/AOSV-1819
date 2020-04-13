@@ -1,0 +1,5 @@
+<map id="src/kmodule/session_manager.h" name="src/kmodule/session_manager.h">
+<area shape="rect" id="node1" title="APIs used to interact with the session manger, component of the Session Manager submodule." alt="" coords="91,5,245,47"/>
+<area shape="rect" id="node2" href="$device__sessionfs_8c.html" title="Implementation of the virtual character device that will handle sessions, component of the Character ..." alt="" coords="5,95,155,136"/>
+<area shape="rect" id="node3" href="$session__manager_8c.html" title="Implementation of the Session Manager submodule." alt="" coords="179,95,333,136"/>
+</map>

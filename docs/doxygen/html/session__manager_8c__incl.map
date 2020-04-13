@@ -1,0 +1,22 @@
+<map id="src/kmodule/session_manager.c" name="src/kmodule/session_manager.c">
+<area shape="rect" id="node1" title="Implementation of the Session Manager submodule." alt="" coords="985,5,1140,47"/>
+<area shape="rect" id="node2" title=" " alt="" coords="5,169,112,196"/>
+<area shape="rect" id="node3" title=" " alt="" coords="340,95,479,121"/>
+<area shape="rect" id="node4" title=" " alt="" coords="503,95,627,121"/>
+<area shape="rect" id="node5" title=" " alt="" coords="651,95,746,121"/>
+<area shape="rect" id="node6" title=" " alt="" coords="771,95,861,121"/>
+<area shape="rect" id="node7" title=" " alt="" coords="886,95,997,121"/>
+<area shape="rect" id="node8" title=" " alt="" coords="1021,95,1104,121"/>
+<area shape="rect" id="node9" title=" " alt="" coords="1128,95,1219,121"/>
+<area shape="rect" id="node10" title=" " alt="" coords="1243,95,1341,121"/>
+<area shape="rect" id="node11" title=" " alt="" coords="1365,95,1453,121"/>
+<area shape="rect" id="node12" title=" " alt="" coords="1478,95,1663,121"/>
+<area shape="rect" id="node13" title=" " alt="" coords="1687,95,1838,121"/>
+<area shape="rect" id="node14" title=" " alt="" coords="1862,95,2042,121"/>
+<area shape="rect" id="node15" title=" " alt="" coords="2066,95,2185,121"/>
+<area shape="rect" id="node16" title=" " alt="" coords="2209,95,2300,121"/>
+<area shape="rect" id="node17" href="$session__manager_8h.html" title="APIs used to interact with the session manger, component of the Session Manager submodule." alt="" coords="29,95,177,121"/>
+<area shape="rect" id="node20" href="$session__info_8h.html" title="Handles the kobjects for the session manager, part of the Session Information submodule...." alt="" coords="201,95,316,121"/>
+<area shape="rect" id="node18" href="$session__types_8h.html" title=" " alt="" coords="137,169,263,196"/>
+<area shape="rect" id="node19" title=" " alt="" coords="192,244,309,271"/>
+</map>

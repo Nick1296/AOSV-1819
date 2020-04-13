@@ -1,0 +1,4 @@
+<map id="delete_session" name="delete_session">
+<area shape="rect" id="node1" title="Deallocates the given session object." alt="" coords="5,5,124,32"/>
+<area shape="rect" id="node2" href="$session__info_8c.html#af00564d2a553b340f5c6a028eec867c1" title="Removes a session kobject." alt="" coords="172,5,332,32"/>
+</map>

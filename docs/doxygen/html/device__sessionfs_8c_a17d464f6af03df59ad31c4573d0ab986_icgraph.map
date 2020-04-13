@@ -1,0 +1,5 @@
+<map id="device_read" name="device_read">
+<area shape="rect" id="node1" title="Get the path in which sessions are enabled." alt="" coords="317,5,419,32"/>
+<area shape="rect" id="node2" href="$device__sessionfs__mod_8h.html#a88bd4adb20dc9040ae78f5b4036b61ab" title="Device initialization and registration." alt="" coords="176,5,269,32"/>
+<area shape="rect" id="node3" href="$module_8c.html#af4b79167ea5472e999750f3f28dd0f74" title="Loads the device when the kernel module is loaded in the kernel." alt="" coords="5,5,128,32"/>
+</map>

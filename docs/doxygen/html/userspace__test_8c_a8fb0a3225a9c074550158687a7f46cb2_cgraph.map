@@ -1,0 +1,5 @@
+<map id="change_sess_path" name="change_sess_path">
+<area shape="rect" id="node1" title="Use libsessionfs APIs to change the session path to path." alt="" coords="5,31,147,57"/>
+<area shape="rect" id="node2" href="$libsessionfs_8c.html#a4b449d2d0c21aa6c56e395ed6b302e94" title="Gets the current session path." alt="" coords="201,5,315,32"/>
+<area shape="rect" id="node3" href="$libsessionfs_8c.html#adda2f64738511a6b0b415abb239c83b9" title="Changes the current session path." alt="" coords="195,56,321,83"/>
+</map>

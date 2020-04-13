@@ -1,0 +1,6 @@
+<map id="src/kmodule/module.c" name="src/kmodule/module.c">
+<area shape="rect" id="node1" title="Module configuration, component of the Module Configuration submodule." alt="" coords="116,5,283,32"/>
+<area shape="rect" id="node2" title=" " alt="" coords="5,80,116,107"/>
+<area shape="rect" id="node3" title=" " alt="" coords="140,80,259,107"/>
+<area shape="rect" id="node4" href="$device__sessionfs__mod_8h.html" title="Device properties needed to the kernel module, component of the Character Device submodule." alt="" coords="283,80,465,107"/>
+</map>

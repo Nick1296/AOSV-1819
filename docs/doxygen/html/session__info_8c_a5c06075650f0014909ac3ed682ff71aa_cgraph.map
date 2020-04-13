@@ -1,0 +1,4 @@
+<map id="add_session_info" name="add_session_info">
+<area shape="rect" id="node1" title="Adds a new kobject representing an original file, under the SessionFS kobject." alt="" coords="5,13,140,39"/>
+<area shape="rect" id="node2" href="$session__info_8c.html#a6e1507e9b7ff0a2d7eae6e9db7a6a41a" title="The function used to read the SysFS active_incarnations_num attribute file." alt="" coords="188,5,337,47"/>
+</map>

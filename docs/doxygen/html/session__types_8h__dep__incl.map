@@ -1,0 +1,8 @@
+<map id="src/kmodule/session_types.h" name="src/kmodule/session_types.h">
+<area shape="rect" id="node1" title=" " alt="" coords="95,5,249,47"/>
+<area shape="rect" id="node2" href="$session__manager_8h.html" title="APIs used to interact with the session manger, component of the Session Manager submodule." alt="" coords="5,95,160,136"/>
+<area shape="rect" id="node5" href="$session__info_8h.html" title="Handles the kobjects for the session manager, part of the Session Information submodule...." alt="" coords="184,95,339,136"/>
+<area shape="rect" id="node3" href="$device__sessionfs_8c.html" title="Implementation of the virtual character device that will handle sessions, component of the Character ..." alt="" coords="184,184,333,225"/>
+<area shape="rect" id="node4" href="$session__manager_8c.html" title="Implementation of the Session Manager submodule." alt="" coords="5,184,160,225"/>
+<area shape="rect" id="node6" href="$session__info_8c.html" title="Implementation of the Session Information submodule." alt="" coords="357,184,512,225"/>
+</map>

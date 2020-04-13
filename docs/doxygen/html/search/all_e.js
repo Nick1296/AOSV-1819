@@ -1,0 +1,22 @@
+var searchData=
+[
+  ['search_5fsession_86',['search_session',['../session__manager_8c.html#abe5de8d0745f9cc09c02191e1818001f',1,'session_manager.c']]],
+  ['sess_5fchange_5ftest_87',['sess_change_test',['../userspace__test_8c.html#a4c29ab7f6b8f2458ef512e767c260daf',1,'userspace_test.c']]],
+  ['sess_5finfo_88',['sess_info',['../structsess__info.html',1,'']]],
+  ['sess_5fkobj_5fname_89',['SESS_KOBJ_NAME',['../session__info_8h.html#a0f43cb2830ec9b02f84848be14a707ec',1,'session_info.h']]],
+  ['sess_5fparams_90',['sess_params',['../structsess__params.html',1,'']]],
+  ['sess_5fpath_91',['sess_path',['../device__sessionfs_8c.html#ade57e23a26963004ebf1cbcc05b825ed',1,'sess_path():&#160;device_sessionfs.c'],['../device__sessionfs__mod_8h.html#ade57e23a26963004ebf1cbcc05b825ed',1,'sess_path():&#160;device_sessionfs.c']]],
+  ['session_92',['session',['../structsession.html',1,'']]],
+  ['session_5finfo_2ec_93',['session_info.c',['../session__info_8c.html',1,'']]],
+  ['session_5finfo_2eh_94',['session_info.h',['../session__info_8h.html',1,'']]],
+  ['session_5fmanager_2ec_95',['session_manager.c',['../session__manager_8c.html',1,'']]],
+  ['session_5fmanager_2eh_96',['session_manager.h',['../session__manager_8h.html',1,'']]],
+  ['session_5frcu_97',['session_rcu',['../structsession__rcu.html',1,'']]],
+  ['session_5ftypes_2eh_98',['session_types.h',['../session__types_8h.html',1,'']]],
+  ['sessionfs_5fdevnode_99',['sessionfs_devnode',['../device__sessionfs_8c.html#a86711996bfb8c8c9183a4c3307f5eee6',1,'device_sessionfs.c']]],
+  ['sessionfs_5fload_100',['sessionFS_load',['../module_8c.html#af4b79167ea5472e999750f3f28dd0f74',1,'module.c']]],
+  ['sessionfs_5funload_101',['sessionFS_unload',['../module_8c.html#abd810a6f947c3b87a782a9aad746eef3',1,'module.c']]],
+  ['sessions_102',['sessions',['../session__manager_8c.html#a16d321e233eeb27c5fa65d1b7519477e',1,'session_manager.c']]],
+  ['sessions_5flock_103',['sessions_lock',['../session__manager_8c.html#a8969353f4c2bc47763ade4fc6cf466dc',1,'session_manager.c']]],
+  ['sessions_5fnum_104',['sessions_num',['../session__info_8c.html#a7bde0d05ae26eff4674466c5e0f30a24',1,'session_info.c']]]
+];

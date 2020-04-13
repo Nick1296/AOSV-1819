@@ -1,0 +1,10 @@
+<map id="close_session" name="close_session">
+<area shape="rect" id="node1" title="Closes a session." alt="" coords="5,132,117,159"/>
+<area shape="rect" id="node2" href="$session__manager_8c.html#a18273cf2fcf61730e36b611412c0700d" title="Removes the given incarnation." alt="" coords="174,31,317,57"/>
+<area shape="rect" id="node5" href="$session__manager_8c.html#a018bae728d08b5091b906f491019b6c6" title="Deallocates the given session object." alt="" coords="186,81,305,108"/>
+<area shape="rect" id="node6" href="$session__manager_8c.html#a34e2a89cc6c7c38749c5da0ef5c18fd8" title="Deallocates a session_rcu element." alt="" coords="172,132,319,159"/>
+<area shape="rect" id="node7" href="$session__info_8c.html#af00564d2a553b340f5c6a028eec867c1" title="Removes a session kobject." alt="" coords="165,183,325,209"/>
+<area shape="rect" id="node8" href="$session__manager_8c.html#abe5de8d0745f9cc09c02191e1818001f" title="Searches for a session with a given pathname, or with an incarnation with matching pid and file descr..." alt="" coords="185,233,306,260"/>
+<area shape="rect" id="node3" href="$session__manager_8c.html#a8c0e032011c18f8eb45eaa72a9a656d6" title="Copy the contents of a file into another." alt="" coords="425,5,506,32"/>
+<area shape="rect" id="node4" href="$session__info_8c.html#a49532cff908aa827fb90e1d4e3dcd2b0" title="Removes the kobject attribute incarnation from a kobject." alt="" coords="373,56,557,83"/>
+</map>

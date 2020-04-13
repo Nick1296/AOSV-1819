@@ -1,0 +1,7 @@
+<map id="src/kmodule/device_sessionfs.h" name="src/kmodule/device_sessionfs.h">
+<area shape="rect" id="node1" title="Properties of the devices necessary for the device implementation and the library that uses the devic..." alt="" coords="208,5,357,47"/>
+<area shape="rect" id="node2" href="$libsessionfs_8h.html" title="Shared library header." alt="" coords="80,102,285,129"/>
+<area shape="rect" id="node5" href="$device__sessionfs_8c.html" title="Implementation of the virtual character device that will handle sessions, component of the Character ..." alt="" coords="309,95,459,136"/>
+<area shape="rect" id="node3" href="$userspace__test_8c.html" title="Userpsace program that will test the kernel module using the libsessionfs.c shared library." alt="" coords="5,184,157,225"/>
+<area shape="rect" id="node4" href="$libsessionfs_8c.html" title="Implementation of the userspace shared library." alt="" coords="182,191,386,218"/>
+</map>

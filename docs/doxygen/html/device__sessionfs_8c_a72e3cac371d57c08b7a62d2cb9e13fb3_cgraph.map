@@ -1,0 +1,21 @@
+<map id="device_ioctl" name="device_ioctl">
+<area shape="rect" id="node1" title="Handles the ioctls calls issued to the SessionFS_dev device." alt="" coords="5,203,105,230"/>
+<area shape="rect" id="node2" href="$session__manager_8c.html#a96edb8992f8537a88c79b896b45d47c2" title="Releases all the incarnations that are associated with a dead/zombie pid." alt="" coords="330,83,453,110"/>
+<area shape="rect" id="node7" href="$session__manager_8c.html#a1594b401bd3a9bb39decd88759bfbebd" title="Closes a session." alt="" coords="335,134,447,160"/>
+<area shape="rect" id="node11" href="$session__manager_8c.html#ae86586f2293bf35b1b57be58af0b9588" title="Create a new session for the specified file." alt="" coords="153,228,272,255"/>
+<area shape="rect" id="node19" href="$device__sessionfs_8c.html#a4be514d9f1ccca772b15a5e8276c0c01" title="Check if the given path is a subpath of sess_path" alt="" coords="165,279,261,306"/>
+<area shape="rect" id="node3" href="$session__manager_8c.html#a018bae728d08b5091b906f491019b6c6" title="Deallocates the given session object." alt="" coords="531,184,650,211"/>
+<area shape="rect" id="node4" href="$session__manager_8c.html#a34e2a89cc6c7c38749c5da0ef5c18fd8" title="Deallocates a session_rcu element." alt="" coords="517,83,664,110"/>
+<area shape="rect" id="node5" href="$session__info_8c.html#a49532cff908aa827fb90e1d4e3dcd2b0" title="Removes the kobject attribute incarnation from a kobject." alt="" coords="719,98,903,124"/>
+<area shape="rect" id="node6" href="$session__info_8c.html#af00564d2a553b340f5c6a028eec867c1" title="Removes a session kobject." alt="" coords="511,32,671,59"/>
+<area shape="rect" id="node8" href="$session__manager_8c.html#a18273cf2fcf61730e36b611412c0700d" title="Removes the given incarnation." alt="" coords="519,134,662,160"/>
+<area shape="rect" id="node10" href="$session__manager_8c.html#abe5de8d0745f9cc09c02191e1818001f" title="Searches for a session with a given pathname, or with an incarnation with matching pid and file descr..." alt="" coords="530,235,651,262"/>
+<area shape="rect" id="node9" href="$session__manager_8c.html#a8c0e032011c18f8eb45eaa72a9a656d6" title="Copy the contents of a file into another." alt="" coords="770,170,851,196"/>
+<area shape="rect" id="node12" href="$session__manager_8c.html#a2c676ca524171b7f600b7f0189266167" title="Creates an incarnation and add it to an existing session." alt="" coords="320,362,463,388"/>
+<area shape="rect" id="node16" href="$session__manager_8c.html#abe3ac55880f2af28017214c50a38d487" title="Initializes the session information for the given pathname." alt="" coords="342,235,441,262"/>
+<area shape="rect" id="node13" href="$session__info_8c.html#a05e60807f715e0eee172cc7f4f58aec7" title="Adds a new kobject attribute representing an incarnation." alt="" coords="511,438,670,464"/>
+<area shape="rect" id="node15" href="$session__manager_8c.html#a2dd653e4fa6e0dd5f0b4ea3d697679d8" title="Opens a file from kernel space." alt="" coords="549,336,632,363"/>
+<area shape="rect" id="node14" href="$session__info_8c.html#af9d987f87f3c55859d5f3712989a8ac7" title="The function used to read the SysFS incarnations attribute files." alt="" coords="743,438,878,464"/>
+<area shape="rect" id="node17" href="$session__info_8c.html#a5c06075650f0014909ac3ed682ff71aa" title="Adds a new kobject representing an original file, under the SessionFS kobject." alt="" coords="523,286,658,312"/>
+<area shape="rect" id="node18" href="$session__info_8c.html#a6e1507e9b7ff0a2d7eae6e9db7a6a41a" title="The function used to read the SysFS active_incarnations_num attribute file." alt="" coords="736,278,885,320"/>
+</map>

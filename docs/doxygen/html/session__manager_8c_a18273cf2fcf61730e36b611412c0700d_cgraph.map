@@ -1,0 +1,5 @@
+<map id="delete_incarnation" name="delete_incarnation">
+<area shape="rect" id="node1" title="Removes the given incarnation." alt="" coords="5,31,148,57"/>
+<area shape="rect" id="node2" href="$session__manager_8c.html#a8c0e032011c18f8eb45eaa72a9a656d6" title="Copy the contents of a file into another." alt="" coords="247,5,329,32"/>
+<area shape="rect" id="node3" href="$session__info_8c.html#a49532cff908aa827fb90e1d4e3dcd2b0" title="Removes the kobject attribute incarnation from a kobject." alt="" coords="196,56,380,83"/>
+</map>

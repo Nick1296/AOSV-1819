@@ -1,0 +1,5 @@
+<map id="src/shared_lib/libsessionfs.h" name="src/shared_lib/libsessionfs.h">
+<area shape="rect" id="node1" title="Shared library header." alt="" coords="80,5,285,32"/>
+<area shape="rect" id="node2" href="$userspace__test_8c.html" title="Userpsace program that will test the kernel module using the libsessionfs.c shared library." alt="" coords="5,80,157,121"/>
+<area shape="rect" id="node3" href="$libsessionfs_8c.html" title="Implementation of the userspace shared library." alt="" coords="182,87,386,114"/>
+</map>

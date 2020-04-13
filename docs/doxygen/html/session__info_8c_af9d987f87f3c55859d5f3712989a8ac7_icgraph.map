@@ -1,0 +1,9 @@
+<map id="proc_name_show" name="proc_name_show">
+<area shape="rect" id="node1" title="The function used to read the SysFS incarnations attribute files." alt="" coords="1029,5,1164,32"/>
+<area shape="rect" id="node2" href="$session__info_8h.html#a05e60807f715e0eee172cc7f4f58aec7" title="Adds a new kobject attribute representing an incarnation." alt="" coords="823,5,981,32"/>
+<area shape="rect" id="node3" href="$session__manager_8c.html#a2c676ca524171b7f600b7f0189266167" title="Creates an incarnation and add it to an existing session." alt="" coords="632,5,775,32"/>
+<area shape="rect" id="node4" href="$session__manager_8h.html#ae86586f2293bf35b1b57be58af0b9588" title="Create a new session for the specified file." alt="" coords="465,5,584,32"/>
+<area shape="rect" id="node5" href="$device__sessionfs_8c.html#a72e3cac371d57c08b7a62d2cb9e13fb3" title="Handles the ioctls calls issued to the SessionFS_dev device." alt="" coords="317,5,417,32"/>
+<area shape="rect" id="node6" href="$device__sessionfs__mod_8h.html#a88bd4adb20dc9040ae78f5b4036b61ab" title="Device initialization and registration." alt="" coords="176,5,269,32"/>
+<area shape="rect" id="node7" href="$module_8c.html#af4b79167ea5472e999750f3f28dd0f74" title="Loads the device when the kernel module is loaded in the kernel." alt="" coords="5,5,128,32"/>
+</map>

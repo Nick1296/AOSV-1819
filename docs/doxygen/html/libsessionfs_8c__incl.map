@@ -1,0 +1,19 @@
+<map id="src/shared_lib/libsessionfs.c" name="src/shared_lib/libsessionfs.c">
+<area shape="rect" id="node1" title="Implementation of the userspace shared library." alt="" coords="453,5,657,32"/>
+<area shape="rect" id="node2" title=" " alt="" coords="5,80,72,107"/>
+<area shape="rect" id="node3" title=" " alt="" coords="96,80,171,107"/>
+<area shape="rect" id="node4" title=" " alt="" coords="195,80,291,107"/>
+<area shape="rect" id="node5" title=" " alt="" coords="315,80,400,107"/>
+<area shape="rect" id="node6" title=" " alt="" coords="425,80,495,107"/>
+<area shape="rect" id="node7" title=" " alt="" coords="519,80,590,107"/>
+<area shape="rect" id="node8" title=" " alt="" coords="614,80,677,107"/>
+<area shape="rect" id="node9" title=" " alt="" coords="701,80,768,107"/>
+<area shape="rect" id="node10" title=" " alt="" coords="792,80,880,107"/>
+<area shape="rect" id="node11" title=" " alt="" coords="904,80,979,107"/>
+<area shape="rect" id="node12" href="$libsessionfs_8h.html" title="Shared library header." alt="" coords="1003,80,1114,107"/>
+<area shape="rect" id="node13" title=" " alt="" coords="931,155,999,181"/>
+<area shape="rect" id="node14" title=" " alt="" coords="1023,155,1094,181"/>
+<area shape="rect" id="node15" href="$device__sessionfs_8h.html" title="Properties of the devices necessary for the device implementation and the library that uses the devic..." alt="" coords="1119,155,1337,181"/>
+<area shape="rect" id="node16" title=" " alt="" coords="1115,229,1213,256"/>
+<area shape="rect" id="node17" title=" " alt="" coords="1237,229,1344,256"/>
+</map>

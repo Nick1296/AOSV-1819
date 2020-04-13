@@ -1,0 +1,7 @@
+<map id="create_incarnation" name="create_incarnation">
+<area shape="rect" id="node1" title="Creates an incarnation and add it to an existing session." alt="" coords="632,5,775,32"/>
+<area shape="rect" id="node2" href="$session__manager_8h.html#a7468900577b9accbcafce4a38741b86a" title="Create a new session for the specified file." alt="" coords="465,5,584,32"/>
+<area shape="rect" id="node3" href="$device__sessionfs_8c.html#a72e3cac371d57c08b7a62d2cb9e13fb3" title="Handles the ioctls calls from the shared library." alt="" coords="317,5,417,32"/>
+<area shape="rect" id="node4" href="$device__sessionfs__mod_8h.html#a88bd4adb20dc9040ae78f5b4036b61ab" title="Device initialization and registration." alt="" coords="176,5,269,32"/>
+<area shape="rect" id="node5" href="$module_8c.html#af4b79167ea5472e999750f3f28dd0f74" title="load the kernel module and the device" alt="" coords="5,5,128,32"/>
+</map>

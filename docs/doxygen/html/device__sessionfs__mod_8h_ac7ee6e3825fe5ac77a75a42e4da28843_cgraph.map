@@ -1,0 +1,9 @@
+<map id="release_device" name="release_device">
+<area shape="rect" id="node1" title="Releases the device and frees the used memory." alt="" coords="5,107,125,133"/>
+<area shape="rect" id="node2" href="$session__manager_8c.html#a96edb8992f8537a88c79b896b45d47c2" title="Releases all the incarnations that are associated with a dead/zombie pid." alt="" coords="173,81,296,108"/>
+<area shape="rect" id="node7" href="$session__info_8c.html#a8f45995b8b183511354096a9c2063d8d" title="Removes the SessionFS information from the device provided in init_info()." alt="" coords="183,132,286,159"/>
+<area shape="rect" id="node3" href="$session__manager_8c.html#a018bae728d08b5091b906f491019b6c6" title="Deallocates the given session object." alt="" coords="377,5,495,32"/>
+<area shape="rect" id="node4" href="$session__manager_8c.html#a34e2a89cc6c7c38749c5da0ef5c18fd8" title="Deallocates a session_rcu element." alt="" coords="363,56,509,83"/>
+<area shape="rect" id="node5" href="$session__info_8c.html#a49532cff908aa827fb90e1d4e3dcd2b0" title="Removes the kobject attribute incarnation from a kobject." alt="" coords="344,107,528,133"/>
+<area shape="rect" id="node6" href="$session__info_8c.html#af00564d2a553b340f5c6a028eec867c1" title="Removes a session kobject." alt="" coords="356,157,516,184"/>
+</map>

@@ -1,0 +1,9 @@
+<map id="init_session" name="init_session">
+<area shape="rect" id="node1" title="Initializes the session information for the given pathname." alt="" coords="5,114,104,141"/>
+<area shape="rect" id="node2" href="$session__info_8c.html#a5c06075650f0014909ac3ed682ff71aa" title="Adds a new kobject representing an original file, under the SessionFS kobject." alt="" coords="152,13,287,39"/>
+<area shape="rect" id="node4" href="$session__manager_8c.html#a018bae728d08b5091b906f491019b6c6" title="Deallocates the given session object." alt="" coords="160,63,279,90"/>
+<area shape="rect" id="node5" href="$session__info_8c.html#af00564d2a553b340f5c6a028eec867c1" title="Removes a session kobject." alt="" coords="335,93,495,119"/>
+<area shape="rect" id="node6" href="$session__manager_8c.html#a1e6ef3e1bef0f354ad88a23bf0b12420" title="Opens a file from kernel space." alt="" coords="178,165,261,191"/>
+<area shape="rect" id="node7" href="$session__manager_8c.html#abe5de8d0745f9cc09c02191e1818001f" title="Searches for a session with a given pathname, or with an incarnation with matching pid and file descr..." alt="" coords="159,215,280,242"/>
+<area shape="rect" id="node3" href="$session__info_8c.html#a6e1507e9b7ff0a2d7eae6e9db7a6a41a" title="The function used to read the SysFS active_incarnations_num attribute file." alt="" coords="340,5,489,47"/>
+</map>

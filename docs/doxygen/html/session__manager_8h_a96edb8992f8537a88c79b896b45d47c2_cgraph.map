@@ -1,0 +1,7 @@
+<map id="clean_manager" name="clean_manager">
+<area shape="rect" id="node1" title="Releases all the incarnations that are associated with a dead/zombie pid." alt="" coords="5,81,128,108"/>
+<area shape="rect" id="node2" href="$session__manager_8c.html#a018bae728d08b5091b906f491019b6c6" title="Deallocates the given session object." alt="" coords="209,5,327,32"/>
+<area shape="rect" id="node3" href="$session__manager_8c.html#a34e2a89cc6c7c38749c5da0ef5c18fd8" title="Deallocates a session_rcu element." alt="" coords="195,56,341,83"/>
+<area shape="rect" id="node4" href="$session__info_8c.html#a49532cff908aa827fb90e1d4e3dcd2b0" title="Removes the kobject attribute incarnation from a kobject." alt="" coords="176,107,360,133"/>
+<area shape="rect" id="node5" href="$session__info_8c.html#af00564d2a553b340f5c6a028eec867c1" title="Removes a session kobject." alt="" coords="188,157,348,184"/>
+</map>

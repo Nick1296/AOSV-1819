@@ -1,0 +1,7 @@
+<map id="open" name="open">
+<area shape="rect" id="node1" title="Wraps the open determining if it must call the libc open or the SessionFS module." alt="" coords="293,56,348,83"/>
+<area shape="rect" id="node2" href="$userspace__test_8c.html#afa4dca6f8131bb0e05d21abae9f807d1" title="Test file semantic with a session opened when forking." alt="" coords="137,5,217,32"/>
+<area shape="rect" id="node4" href="$userspace__test_8c.html#a1de5516a7893ff3ea277a8c976417bd7" title="A general functionality test." alt="" coords="135,56,218,83"/>
+<area shape="rect" id="node5" href="$userspace__test_8c.html#a4c29ab7f6b8f2458ef512e767c260daf" title="Test the semantic of sessions when the session path has changed." alt="" coords="108,107,245,133"/>
+<area shape="rect" id="node3" href="$userspace__test_8c.html#a3c04138a5bfe5d72780bb7e82a18e627" title="Testing of the kernel module." alt="" coords="5,56,60,83"/>
+</map>

@@ -1,0 +1,5 @@
+<map id="session" name="session">
+<area shape="rect" id="node1" title="General information on a session." alt="" coords="19,95,90,121"/>
+<area shape="rect" id="node2" href="$structsession__rcu.html" title="RCU item that contains a session." alt="" coords="5,184,104,211"/>
+<area shape="rect" id="node3" href="$structsess__info.html" title="Infromations on a session used by SysFS." alt="" coords="13,5,96,32"/>
+</map>

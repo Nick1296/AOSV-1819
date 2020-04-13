@@ -1,0 +1,25 @@
+<map id="src/kmodule/device_sessionfs.c" name="src/kmodule/device_sessionfs.c">
+<area shape="rect" id="node1" title="Implementation of the virtual character device that will handle sessions, component of the Character ..." alt="" coords="1282,5,1431,47"/>
+<area shape="rect" id="node2" href="$device__sessionfs_8h.html" title="Properties of the devices necessary for the device implementation and the library that uses the devic..." alt="" coords="5,95,151,121"/>
+<area shape="rect" id="node5" href="$device__sessionfs__mod_8h.html" title="Device properties needed to the kernel module, component of the Character Device submodule." alt="" coords="486,95,667,121"/>
+<area shape="rect" id="node6" href="$session__manager_8h.html" title="APIs used to interact with the session manger, component of the Session Manager submodule." alt="" coords="175,95,323,121"/>
+<area shape="rect" id="node9" href="$session__info_8h.html" title="Handles the kobjects for the session manager, part of the Session Information submodule...." alt="" coords="347,95,462,121"/>
+<area shape="rect" id="node10" title=" " alt="" coords="691,95,774,121"/>
+<area shape="rect" id="node11" title=" " alt="" coords="799,95,896,121"/>
+<area shape="rect" id="node12" title=" " alt="" coords="921,95,1043,121"/>
+<area shape="rect" id="node13" title=" " alt="" coords="1067,95,1206,121"/>
+<area shape="rect" id="node14" title=" " alt="" coords="1231,95,1344,121"/>
+<area shape="rect" id="node15" title=" " alt="" coords="1368,95,1487,121"/>
+<area shape="rect" id="node16" title=" " alt="" coords="1511,95,1696,121"/>
+<area shape="rect" id="node17" title=" " alt="" coords="1721,95,1811,121"/>
+<area shape="rect" id="node18" title=" " alt="" coords="1836,95,1944,121"/>
+<area shape="rect" id="node19" title=" " alt="" coords="1968,95,2092,121"/>
+<area shape="rect" id="node20" title=" " alt="" coords="2116,95,2267,121"/>
+<area shape="rect" id="node21" title=" " alt="" coords="2291,95,2401,121"/>
+<area shape="rect" id="node22" title=" " alt="" coords="2426,95,2525,121"/>
+<area shape="rect" id="node23" title=" " alt="" coords="2549,95,2665,121"/>
+<area shape="rect" id="node3" title=" " alt="" coords="29,169,127,196"/>
+<area shape="rect" id="node4" title=" " alt="" coords="173,169,279,196"/>
+<area shape="rect" id="node7" href="$session__types_8h.html" title=" " alt="" coords="304,169,431,196"/>
+<area shape="rect" id="node8" title=" " alt="" coords="359,244,477,271"/>
+</map>

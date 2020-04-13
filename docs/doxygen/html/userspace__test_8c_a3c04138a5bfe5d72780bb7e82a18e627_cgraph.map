@@ -1,0 +1,12 @@
+<map id="main" name="main">
+<area shape="rect" id="node1" title="Testing of the kernel module." alt="" coords="5,107,60,133"/>
+<area shape="rect" id="node2" href="$userspace__test_8c.html#a8fb0a3225a9c074550158687a7f46cb2" title="Use libsessionfs APIs to change the session path to path." alt="" coords="293,5,435,32"/>
+<area shape="rect" id="node5" href="$libsessionfs_8c.html#a90056fe0af1a3324f823b6d9424a1824" title="Asks to shut down the SessionFS_dev device." alt="" coords="109,208,244,235"/>
+<area shape="rect" id="node6" href="$userspace__test_8c.html#afa4dca6f8131bb0e05d21abae9f807d1" title="Test file semantic with a session opened when forking." alt="" coords="137,107,217,133"/>
+<area shape="rect" id="node9" href="$userspace__test_8c.html#a1de5516a7893ff3ea277a8c976417bd7" title="A general functionality test." alt="" coords="135,157,218,184"/>
+<area shape="rect" id="node10" href="$userspace__test_8c.html#a4c29ab7f6b8f2458ef512e767c260daf" title="Test the semantic of sessions when the session path has changed." alt="" coords="108,56,245,83"/>
+<area shape="rect" id="node3" href="$libsessionfs_8c.html#a4b449d2d0c21aa6c56e395ed6b302e94" title="Gets the current session path." alt="" coords="489,68,603,95"/>
+<area shape="rect" id="node4" href="$libsessionfs_8c.html#adda2f64738511a6b0b415abb239c83b9" title="Changes the current session path." alt="" coords="483,5,609,32"/>
+<area shape="rect" id="node7" href="$libsessionfs_8c.html#aafbcde67669a1b96577e735ddebd8634" title="Wraps the close determining if it must call the libc close or the SessionFS module." alt="" coords="518,144,574,171"/>
+<area shape="rect" id="node8" href="$libsessionfs_8c.html#a079d60801c18155ac2ec1707b56867fb" title="Wraps the open determining if it must call the libc open or the SessionFS module." alt="" coords="337,107,391,133"/>
+</map>

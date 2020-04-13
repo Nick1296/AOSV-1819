@@ -1,0 +1,10 @@
+<map id="copy_file" name="copy_file">
+<area shape="rect" id="node1" title="Copy the contents of a file into another." alt="" coords="823,31,904,57"/>
+<area shape="rect" id="node2" href="$session__manager_8c.html#a2c676ca524171b7f600b7f0189266167" title="Creates an incarnation and add it to an existing session." alt="" coords="632,5,775,32"/>
+<area shape="rect" id="node7" href="$session__manager_8c.html#a18273cf2fcf61730e36b611412c0700d" title="Removes the given incarnation." alt="" coords="632,56,775,83"/>
+<area shape="rect" id="node3" href="$session__manager_8h.html#ae86586f2293bf35b1b57be58af0b9588" title="Create a new session for the specified file." alt="" coords="465,5,584,32"/>
+<area shape="rect" id="node4" href="$device__sessionfs_8c.html#a72e3cac371d57c08b7a62d2cb9e13fb3" title="Handles the ioctls calls issued to the SessionFS_dev device." alt="" coords="317,31,417,57"/>
+<area shape="rect" id="node5" href="$device__sessionfs__mod_8h.html#a88bd4adb20dc9040ae78f5b4036b61ab" title="Device initialization and registration." alt="" coords="176,31,269,57"/>
+<area shape="rect" id="node6" href="$module_8c.html#af4b79167ea5472e999750f3f28dd0f74" title="Loads the device when the kernel module is loaded in the kernel." alt="" coords="5,31,128,57"/>
+<area shape="rect" id="node8" href="$session__manager_8h.html#a1594b401bd3a9bb39decd88759bfbebd" title="Closes a session." alt="" coords="469,56,581,83"/>
+</map>

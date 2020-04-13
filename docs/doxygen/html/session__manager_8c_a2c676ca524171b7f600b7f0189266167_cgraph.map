@@ -1,0 +1,7 @@
+<map id="create_incarnation" name="create_incarnation">
+<area shape="rect" id="node1" title="Creates an incarnation and add it to an existing session." alt="" coords="5,56,148,83"/>
+<area shape="rect" id="node2" href="$session__info_8c.html#a05e60807f715e0eee172cc7f4f58aec7" title="Adds a new kobject attribute representing an incarnation." alt="" coords="196,5,355,32"/>
+<area shape="rect" id="node4" href="$session__manager_8c.html#a8c0e032011c18f8eb45eaa72a9a656d6" title="Copy the contents of a file into another." alt="" coords="235,56,316,83"/>
+<area shape="rect" id="node5" href="$session__manager_8c.html#a2dd653e4fa6e0dd5f0b4ea3d697679d8" title="Opens a file from kernel space." alt="" coords="234,107,317,133"/>
+<area shape="rect" id="node3" href="$session__info_8c.html#af9d987f87f3c55859d5f3712989a8ac7" title="The function used to read the SysFS incarnations attribute files." alt="" coords="403,5,537,32"/>
+</map>

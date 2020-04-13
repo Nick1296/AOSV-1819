@@ -1,0 +1,4 @@
+<map id="add_incarnation_info" name="add_incarnation_info">
+<area shape="rect" id="node1" title="Adds a new kobject attribute representing an incarnation." alt="" coords="5,5,164,32"/>
+<area shape="rect" id="node2" href="$session__info_8c.html#af9d987f87f3c55859d5f3712989a8ac7" title="The function used to read the SysFS incarnations attribute files." alt="" coords="212,5,347,32"/>
+</map>

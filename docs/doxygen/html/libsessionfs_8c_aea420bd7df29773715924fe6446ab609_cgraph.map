@@ -1,0 +1,5 @@
+<map id="open" name="open">
+<area shape="rect" id="node1" title="Wraps the open determining if it must call the libc open or the SessionFS module." alt="" coords="5,31,60,57"/>
+<area shape="rect" id="node2" href="$libsessionfs_8c.html#a73834ef472e30f71aecba39e88809d1d" title="Wraps the close determining if it must call the libc close or the SessionFS module." alt="" coords="137,5,193,32"/>
+<area shape="rect" id="node3" href="$libsessionfs_8c.html#a4b449d2d0c21aa6c56e395ed6b302e94" title="Gets the current session path." alt="" coords="108,56,223,83"/>
+</map>

@@ -1,0 +1,25 @@
+var searchData=
+[
+  ['data_5fdim_15',['DATA_DIM',['../session__manager_8c.html#a68c0ab1dd55579ffd14f86b660773248',1,'session_manager.c']]],
+  ['default_5fperm_16',['DEFAULT_PERM',['../userspace__test_8c.html#ae93be9f917eb7dbc1863a710f7a7b0bc',1,'DEFAULT_PERM():&#160;userspace_test.c'],['../session__manager_8c.html#ae93be9f917eb7dbc1863a710f7a7b0bc',1,'DEFAULT_PERM():&#160;session_manager.c']]],
+  ['default_5fsess_5fpath_17',['DEFAULT_SESS_PATH',['../device__sessionfs_8c.html#a7af4c558aec9e65fa23bd24be6a19010',1,'device_sessionfs.c']]],
+  ['delete_5fincarnation_18',['delete_incarnation',['../session__manager_8c.html#a18273cf2fcf61730e36b611412c0700d',1,'session_manager.c']]],
+  ['delete_5fsession_19',['delete_session',['../session__manager_8c.html#a018bae728d08b5091b906f491019b6c6',1,'session_manager.c']]],
+  ['delete_5fsession_5frcu_20',['delete_session_rcu',['../session__manager_8c.html#a34e2a89cc6c7c38749c5da0ef5c18fd8',1,'session_manager.c']]],
+  ['dev_21',['dev',['../device__sessionfs_8c.html#acf6a82c73e7a9d99293d9ce0b8837faf',1,'device_sessionfs.c']]],
+  ['dev_5fclass_22',['dev_class',['../device__sessionfs_8c.html#a8ab23f5c031b69df871df61635ae3433',1,'device_sessionfs.c']]],
+  ['dev_5fkobj_23',['dev_kobj',['../session__info_8c.html#a19aa300cfa380f18e8e12a19a4beb515',1,'session_info.c']]],
+  ['dev_5flock_24',['dev_lock',['../device__sessionfs_8c.html#a569cfaa35009e80bc8a86dcf868e9e2a',1,'device_sessionfs.c']]],
+  ['dev_5fops_25',['dev_ops',['../device__sessionfs_8c.html#a9af67eda7c8791e6f01c28baed4b892e',1,'device_sessionfs.c']]],
+  ['dev_5fpath_26',['DEV_PATH',['../libsessionfs_8c.html#a671e6b4489b01d7f3c63372b1b89b232',1,'libsessionfs.c']]],
+  ['device_5fdisabled_27',['DEVICE_DISABLED',['../device__sessionfs_8c.html#a4f3fa11e6bd83d4af980010de40fbdae',1,'device_sessionfs.c']]],
+  ['device_5fioctl_28',['device_ioctl',['../device__sessionfs_8c.html#a72e3cac371d57c08b7a62d2cb9e13fb3',1,'device_sessionfs.c']]],
+  ['device_5fname_29',['DEVICE_NAME',['../device__sessionfs_8h.html#a5f5a2c9450ebc584b4fe743c6b1a280b',1,'device_sessionfs.h']]],
+  ['device_5fread_30',['device_read',['../device__sessionfs_8c.html#a17d464f6af03df59ad31c4573d0ab986',1,'device_sessionfs.c']]],
+  ['device_5fsessionfs_2ec_31',['device_sessionfs.c',['../device__sessionfs_8c.html',1,'']]],
+  ['device_5fsessionfs_2eh_32',['device_sessionfs.h',['../device__sessionfs_8h.html',1,'']]],
+  ['device_5fsessionfs_5fmod_2eh_33',['device_sessionfs_mod.h',['../device__sessionfs__mod_8h.html',1,'']]],
+  ['device_5fshutdown_34',['device_shutdown',['../libsessionfs_8c.html#a90056fe0af1a3324f823b6d9424a1824',1,'device_shutdown(void):&#160;libsessionfs.c'],['../libsessionfs_8h.html#a90056fe0af1a3324f823b6d9424a1824',1,'device_shutdown(void):&#160;libsessionfs.c']]],
+  ['device_5fstatus_35',['device_status',['../device__sessionfs_8c.html#a05060cdcff0a75b56ac633165c824f1f',1,'device_sessionfs.c']]],
+  ['device_5fwrite_36',['device_write',['../device__sessionfs_8c.html#a2d6bff2892b490d459e42974bfd4be12',1,'device_sessionfs.c']]]
+];
