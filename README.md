@@ -43,7 +43,7 @@ This information can be provided through `procFS` or `sysFS`, at the discretion 
 
 We are using [GitHub Classroom](https://classroom.github.com/) this year. This is also an opportunity to experiment with the git Version Control System.
 
-Follow this **[<u>INVITATION LINK</u>](https://classroom.github.com/a/j0yfI-y4)** to create a new repo on GitHub, in which you will be carrying out the development work.
+Follow this **[<u>INVITATION LINK</u>]()** to create a new repo on GitHub, in which you will be carrying out the development work.
 
 If you want to get the best from this experience, remember that git is just a tool. Although it helps you at keeping the work organized, if you use it wrong, you will mess everything up in any case.
 
